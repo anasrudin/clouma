@@ -7,20 +7,7 @@ instantiation only, no run_async calls are made.
 """
 from __future__ import annotations
 
-import os
-import sys
 import uuid
-
-os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
-os.environ.setdefault("LLM_BASE_URL", "http://localhost:11434/v1")
-os.environ.setdefault("LLM_MODEL", "test-model")
-os.environ.setdefault("LLM_API_KEY", "test-key")
-
-_APPS_DIR = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)
-if _APPS_DIR not in sys.path:
-    sys.path.insert(0, _APPS_DIR)
 
 import pytest
 import pytest_asyncio

@@ -54,9 +54,6 @@ def upgrade() -> None:
         sa.Column("timestamp", sa.Float(), nullable=False),
     )
     op.create_index(
-        "ix_adk_session_events_session_id", "adk_session_events", ["session_id"]
-    )
-    op.create_index(
         "ix_adk_session_events_timestamp", "adk_session_events", ["timestamp"]
     )
     op.create_index(
@@ -70,9 +67,6 @@ def downgrade() -> None:
     op.drop_index("ix_adk_session_events_session_ts", table_name="adk_session_events")
     op.drop_index(
         "ix_adk_session_events_timestamp", table_name="adk_session_events"
-    )
-    op.drop_index(
-        "ix_adk_session_events_session_id", table_name="adk_session_events"
     )
     op.drop_table("adk_session_events")
 

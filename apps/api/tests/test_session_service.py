@@ -7,21 +7,6 @@ jsonb for our purposes (event round-trip through model_dump / model_validate).
 """
 from __future__ import annotations
 
-import os
-import sys
-
-# Ensure env vars are set before any api import
-os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
-os.environ.setdefault("LLM_BASE_URL", "http://localhost:11434/v1")
-os.environ.setdefault("LLM_MODEL", "test-model")
-os.environ.setdefault("LLM_API_KEY", "test-key")
-
-_APPS_DIR = os.path.dirname(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-)
-if _APPS_DIR not in sys.path:
-    sys.path.insert(0, _APPS_DIR)
-
 import pytest
 import pytest_asyncio
 from sqlalchemy import select, text
@@ -211,3 +196,30 @@ async def test_delete_session_removes_rows(service, sessionmaker_fixture):
 
     assert sess_row is None, "session row should be deleted"
     assert evt_rows == [], "event rows should be deleted"
+
+
+# ---------------------------------------------------------------------------
+# Test 7: append_event raises ValueError when session has been deleted (I2)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_append_event_raises_when_session_deleted(service):
+    """append_event must raise ValueError if the SessionRow is gone.
+
+    Regression guard: previously the missing-row branch was a silent no-op,
+    meaning the caller got back an event that was never actually persisted.
+    """
+    session = await service.create_session(app_name="raiseapp", user_id="ru1")
+
+    # Delete the session out-of-band (simulates concurrent deletion)
+    await service.delete_session(
+        app_name="raiseapp",
+        user_id="ru1",
+        session_id=session.id,
+    )
+
+    event = _make_event(author="user", text="ghost write")
+
+    with pytest.raises(ValueError, match=session.id):
+        await service.append_event(session, event)

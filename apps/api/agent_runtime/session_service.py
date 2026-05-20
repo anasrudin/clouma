@@ -10,7 +10,9 @@ and replayed transparently without requiring schema migrations.
 """
 from __future__ import annotations
 
+import asyncio
 import uuid
+from collections import defaultdict
 from typing import Any, Optional
 
 from google.adk.platform import time as platform_time
@@ -41,6 +43,7 @@ class PostgresSessionService(BaseSessionService):
 
     def __init__(self, sessionmaker: async_sessionmaker[AsyncSession]) -> None:
         self._sessionmaker = sessionmaker
+        self._session_locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
     # ------------------------------------------------------------------
     # create_session
@@ -208,6 +211,10 @@ class PostgresSessionService(BaseSessionService):
 
         Calls super().append_event() first (handles partial events, state
         deltas, temp state trimming), then persists to DB.
+
+        A per-session asyncio lock serialises concurrent callers in-process.
+        The SELECT … FOR UPDATE enforces row-level locking on Postgres (no-op
+        on SQLite but harmless).
         """
         # Let base class handle partial/temp state logic
         event = await super().append_event(session, event)
@@ -219,35 +226,36 @@ class PostgresSessionService(BaseSessionService):
         # Serialize the full event as an opaque JSON blob
         event_blob = event.model_dump(mode="json")
 
-        async with self._sessionmaker() as db:
-            # Persist the event blob
-            db.add(
-                EventRow(
-                    session_id=session.id,
-                    event_json=event_blob,
-                    timestamp=event.timestamp,
+        async with self._session_locks[session.id]:
+            async with self._sessionmaker() as db:
+                # Persist the event blob
+                db.add(
+                    EventRow(
+                        session_id=session.id,
+                        event_json=event_blob,
+                        timestamp=event.timestamp,
+                    )
                 )
-            )
 
-            # Update session's last_update_time and state in DB
-            result = await db.execute(
-                select(SessionRow).where(SessionRow.id == session.id)
-            )
-            row: Optional[SessionRow] = result.scalar_one_or_none()
-            if row is not None:
+                # Lock the session row for update (no-op on SQLite, enforced on Postgres)
+                result = await db.execute(
+                    select(SessionRow)
+                    .where(SessionRow.id == session.id)
+                    .with_for_update()
+                )
+                row: Optional[SessionRow] = result.scalar_one_or_none()
+                if row is None:
+                    raise ValueError(
+                        f"Session {session.id!r} not found or deleted during append_event"
+                    )
+
                 row.last_update_time = event.timestamp
-                # Persist non-temp session state delta
+                # temp: keys already stripped by super(); update is safe as-is
                 if event.actions.state_delta:
                     merged = dict(row.state_json or {})
-                    merged.update(
-                        {
-                            k: v
-                            for k, v in event.actions.state_delta.items()
-                            if not k.startswith("temp:")
-                        }
-                    )
+                    merged.update(event.actions.state_delta)
                     row.state_json = merged
 
-            await db.commit()
+                await db.commit()
 
         return event

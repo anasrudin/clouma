@@ -30,7 +30,7 @@ class SessionRow(Base):
     )  # ADK session id (uuid string)
     app_name: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     user_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
-    state_json: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    state_json: Mapped[dict] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -48,7 +48,7 @@ class EventRow(Base):
     __tablename__ = "adk_session_events"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    session_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False)
     event_json: Mapped[dict] = mapped_column(JSON, nullable=False)
     timestamp: Mapped[float] = mapped_column(Float, nullable=False, index=True)
 

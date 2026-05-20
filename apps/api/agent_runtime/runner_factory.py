@@ -13,6 +13,7 @@ Design notes:
 """
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 from google.adk.agents import LlmAgent
@@ -80,7 +81,6 @@ async def build_runner(
     # 4. Build LlmAgent
     #    ADK requires agent name to be a valid Python identifier.
     #    Sanitize by replacing non-alphanumeric characters with underscores.
-    import re
     raw_name: str = cfg["name"]
     sanitized_name = re.sub(r"[^A-Za-z0-9_]", "_", raw_name)
     if not sanitized_name or sanitized_name[0].isdigit():

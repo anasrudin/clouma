@@ -151,4 +151,4 @@ def register_tool(name: str, description: str) -> Callable[[Callable], Callable]
 # Auto-register builtin tools on import
 # ---------------------------------------------------------------------------
 
-from agent_runtime.tools import builtin as _builtin  # noqa: E402, F401
+from . import builtin as _builtin  # noqa: E402, F401

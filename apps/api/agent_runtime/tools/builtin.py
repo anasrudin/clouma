@@ -17,7 +17,7 @@ from pathlib import Path
 
 import httpx
 
-from agent_runtime.tools import register_tool
+from . import register_tool
 
 
 # ---------------------------------------------------------------------------

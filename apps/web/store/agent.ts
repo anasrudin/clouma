@@ -1,6 +1,10 @@
 // store/agent.ts
 import { create } from "zustand"
 
+// ---------------------------------------------------------------------------
+// Legacy StreamEvent union (UI mock events — kept for backward compatibility)
+// ---------------------------------------------------------------------------
+
 export type StreamEvent =
   | { type: "token"; content: string }
   | { type: "tool_call"; tool: string; input: string }
@@ -8,6 +12,52 @@ export type StreamEvent =
   | { type: "checkpoint"; step: number; state: string }
   | { type: "status"; status: "running" | "waiting" | "completed" | "failed" }
   | { type: "error"; message: string }
+  // ADK 2.0 native event — forwarded as-is from runner.run_async()
+  | { type: "adk_event"; raw: AdkEvent }
+
+// ---------------------------------------------------------------------------
+// ADK 2.0 Event shape (subset of fields returned by event.model_dump())
+// ---------------------------------------------------------------------------
+
+export interface AdkPart {
+  text?: string
+  function_call?: {
+    id?: string
+    name: string
+    args: Record<string, unknown>
+  }
+  function_response?: {
+    id?: string
+    name: string
+    response: Record<string, unknown>
+  }
+}
+
+export interface AdkContent {
+  role?: string
+  parts?: AdkPart[]
+}
+
+export interface AdkNodeInfo {
+  /** ADK 2.0 node graph breadcrumb, e.g. "root.sub_agent.tool_node" */
+  node_name?: string
+  [key: string]: unknown
+}
+
+export interface AdkEvent {
+  id?: string
+  author?: string
+  content?: AdkContent
+  actions?: {
+    state_delta?: Record<string, unknown>
+    [key: string]: unknown
+  }
+  timestamp?: number
+  node_info?: AdkNodeInfo
+  turn_complete?: boolean
+  partial?: boolean
+  error_message?: string
+}
 
 export interface AgentStore {
   prompt: string

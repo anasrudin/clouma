@@ -11,3 +11,17 @@ build/
 node_modules/
 .venv/
 venv/
+
+# Next.js
+apps/web/.next/
+apps/web/node_modules/
+
+# Python
+apps/api/__pycache__/
+**/__pycache__/
+
+# Environment
+apps/api/.env
+
+# Superpowers
+.superpowers/

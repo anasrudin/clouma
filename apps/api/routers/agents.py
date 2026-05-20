@@ -1,48 +1,86 @@
 # apps/api/routers/agents.py
-import json
+import uuid
+
 import yaml
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from ..database import get_db
 from ..models.agent import Agent
 from ..schemas.agent import AgentCreate, AgentOut
+from agent_runtime.validator import CompileValidationError, validate_agent_config
 
-router = APIRouter()
+router = APIRouter(prefix="/agents", tags=["agents"])
 
-@router.post("/agents", response_model=AgentOut)
-async def create_agent(req: AgentCreate, db: AsyncSession = Depends(get_db)):
+SCHEMA_HEADER = (
+    "# yaml-language-server: $schema=https://raw.githubusercontent.com/"
+    "google/adk-python/refs/heads/main/src/google/adk/agents/config_schemas/AgentConfig.json\n"
+)
+
+
+def _render_yaml(config: dict) -> str:
+    return SCHEMA_HEADER + yaml.safe_dump(config, sort_keys=False, default_flow_style=False)
+
+
+@router.post("", response_model=AgentOut, status_code=201)
+async def create_agent(payload: AgentCreate, db: AsyncSession = Depends(get_db)):
     try:
-        parsed = yaml.safe_load(req.yaml_config)
-        json_config = json.dumps(parsed)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid YAML")
+        validate_agent_config(payload.config)
+    except CompileValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": str(exc),
+                "delta": {
+                    "unknown_tools": exc.delta.unknown_tools,
+                    "invalid_model": exc.delta.invalid_model,
+                    "missing_required": exc.delta.missing_required,
+                },
+            },
+        )
 
-    agent = Agent(name=req.name, yaml_config=req.yaml_config, json_config=json_config)
+    name = payload.config.get("name", "")
+    description = payload.config.get("description")
+
+    agent = Agent(
+        id=str(uuid.uuid4()),
+        name=name,
+        description=description,
+        config_json=payload.config,
+        yaml_cache=_render_yaml(payload.config),
+    )
     db.add(agent)
-    await db.commit()
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=f"agent name '{name}' already exists")
     await db.refresh(agent)
     return agent
 
-@router.get("/agents", response_model=list[AgentOut])
+
+@router.get("", response_model=list[AgentOut])
 async def list_agents(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Agent).order_by(Agent.created_at.desc()))
     return result.scalars().all()
 
-@router.get("/agents/{agent_id}", response_model=AgentOut)
-async def get_agent(agent_id: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Agent).where(Agent.id == agent_id))
-    agent = result.scalar_one_or_none()
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    return agent
 
-@router.delete("/agents/{agent_id}")
-async def delete_agent(agent_id: str, db: AsyncSession = Depends(get_db)):
+@router.get("/{agent_id}")
+async def get_agent(
+    agent_id: str,
+    format: str = Query("json", pattern="^(json|yaml)$"),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(Agent).where(Agent.id == agent_id))
     agent = result.scalar_one_or_none()
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    await db.delete(agent)
-    await db.commit()
-    return {"ok": True}
+    if agent is None:
+        raise HTTPException(status_code=404, detail=f"agent {agent_id} not found")
+
+    if format == "yaml":
+        from fastapi.responses import PlainTextResponse
+
+        yaml_text = agent.yaml_cache or _render_yaml(agent.config_json)
+        return PlainTextResponse(content=yaml_text, media_type="application/yaml")
+
+    return AgentOut.model_validate(agent)

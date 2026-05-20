@@ -1,16 +1,27 @@
 # apps/api/models/agent.py
-import uuid
 from datetime import datetime
-from sqlalchemy import String, Text, DateTime, func
+
+from sqlalchemy import Column, DateTime, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.sql import func
+
 from ..database import Base
+
 
 class Agent(Base):
     __tablename__ = "agents"
 
-    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    yaml_config: Mapped[str] = mapped_column(Text, nullable=False)
-    json_config: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(String(50), default="created")
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    config_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    yaml_cache: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )

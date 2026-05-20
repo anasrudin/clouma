@@ -1,19 +1,24 @@
 # apps/api/schemas/agent.py
-from pydantic import BaseModel
+from __future__ import annotations
+
 from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, ConfigDict
+
 
 class AgentCreate(BaseModel):
-    name: str
-    yaml_config: str
+    """Payload for POST /agents — accept a validated AgentConfig dict."""
+
+    config: dict[str, Any]  # AgentConfig JSON (validated by validator before reaching here)
+
 
 class AgentOut(BaseModel):
     id: str
     name: str
-    yaml_config: str
-    json_config: str
-    status: str
+    description: str | None
+    config_json: dict[str, Any]
     created_at: datetime
+    updated_at: datetime
 
-    class Config:
-        from_attributes = True
-
+    model_config = ConfigDict(from_attributes=True)

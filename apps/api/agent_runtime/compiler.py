@@ -30,10 +30,17 @@ from agent_runtime.tools import TOOL_REGISTRY
 SCHEMA_PATH = Path(__file__).parent / "schemas" / "agent_config.json"
 AGENT_CONFIG_SCHEMA: dict[str, Any] = json.loads(SCHEMA_PATH.read_text())
 
+MAX_OUTPUT_TOKENS = 1024
+
 
 # ---------------------------------------------------------------------------
 # Tool catalog builder
 # ---------------------------------------------------------------------------
+
+
+def _sanitize_md_cell(s: str) -> str:
+    """Escape characters that would break a markdown table row."""
+    return s.replace("|", "\\|").replace("\n", " ").replace("\r", "")
 
 
 def _build_tool_catalog_markdown() -> str:
@@ -42,8 +49,10 @@ def _build_tool_catalog_markdown() -> str:
         return "(no tools registered)"
     lines = ["| name | description | params |", "|---|---|---|"]
     for entry in TOOL_REGISTRY.values():
+        name = _sanitize_md_cell(entry.name)
+        desc = _sanitize_md_cell(entry.description)
         params = ", ".join(entry.input_schema.get("properties", {}).keys()) or "(none)"
-        lines.append(f"| `{entry.name}` | {entry.description} | {params} |")
+        lines.append(f"| `{name}` | {desc} | {params} |")
     return "\n".join(lines)
 
 
@@ -104,7 +113,8 @@ async def compile_prompt(user_prompt: str) -> CompileResult:
         CompileResult with the parsed AgentConfig dict and the raw LLM response.
 
     Raises:
-        json.JSONDecodeError: If the LLM returns malformed JSON.
+        ValueError: If the LLM returns malformed JSON.
+        RuntimeError: If the LLM output was truncated (finish_reason="length").
         openai.APIError: If the LLM call fails.
     """
     client = _get_client()
@@ -119,9 +129,23 @@ async def compile_prompt(user_prompt: str) -> CompileResult:
             {"role": "user", "content": user_prompt},
         ],
         response_format={"type": "json_object"},
+        # low temperature for deterministic structured output
         temperature=0.2,
-        max_tokens=1024,
+        max_tokens=MAX_OUTPUT_TOKENS,
     )
-    raw = resp.choices[0].message.content or "{}"
-    config = json.loads(raw)
+    choice = resp.choices[0]
+    if choice.finish_reason == "length":
+        raise RuntimeError(
+            f"LLM output was truncated at max_tokens={MAX_OUTPUT_TOKENS}; "
+            "increase the limit or shorten the system prompt."
+        )
+    raw = choice.message.content or "{}"
+    try:
+        config = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        snippet = raw[:200]
+        raise ValueError(
+            f"LLM did not return valid JSON. First 200 chars: {snippet!r}. "
+            f"Original error: {exc.msg} at position {exc.pos}."
+        ) from exc
     return CompileResult(config=config, raw_response=raw)

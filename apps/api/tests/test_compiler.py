@@ -86,7 +86,6 @@ def test_agent_config_schema_loads():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_compile_prompt_with_mocked_llm(monkeypatch):
     """compile_prompt() must parse LLM JSON output into a CompileResult.
 
@@ -139,3 +138,96 @@ async def test_compile_prompt_with_mocked_llm(monkeypatch):
     assert result.raw_response == fake_content, (
         "raw_response must match the original LLM output string"
     )
+
+
+# ---------------------------------------------------------------------------
+# 4. Catalog sanitizes pipe characters in tool description
+# ---------------------------------------------------------------------------
+
+
+def test_catalog_sanitizes_pipe_in_description():
+    """_build_tool_catalog_markdown() must escape '|' in tool names/descriptions."""
+    from agent_runtime.compiler import _build_tool_catalog_markdown
+    from agent_runtime.tools import TOOL_REGISTRY, ToolEntry
+
+    pipe_tool = ToolEntry(
+        name="pipe_tool",
+        description="has | pipe",
+        input_schema={"properties": {}},
+        fn=lambda **_: None,
+        adk_tool=None,
+    )
+    TOOL_REGISTRY["pipe_tool"] = pipe_tool
+    try:
+        catalog = _build_tool_catalog_markdown()
+        assert "\\|" in catalog, (
+            f"Expected escaped pipe '\\|' in catalog, got:\n{catalog}"
+        )
+        # Table should have at least header row + separator + one row per tool
+        rows = catalog.split("\n")
+        assert len(rows) >= 3, f"Expected at least 3 rows in table, got {len(rows)}"
+    finally:
+        del TOOL_REGISTRY["pipe_tool"]
+
+
+# ---------------------------------------------------------------------------
+# 5. compile_prompt raises ValueError on non-JSON LLM response
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_client(content: str, finish_reason: str = "stop"):
+    """Build a mock OpenAI client that returns the given content."""
+    mock_message = MagicMock()
+    mock_message.content = content
+
+    mock_choice = MagicMock()
+    mock_choice.message = mock_message
+    mock_choice.finish_reason = finish_reason
+
+    mock_response = MagicMock()
+    mock_response.choices = [mock_choice]
+
+    mock_create = AsyncMock(return_value=mock_response)
+
+    mock_completions = MagicMock()
+    mock_completions.create = mock_create
+
+    mock_chat = MagicMock()
+    mock_chat.completions = mock_completions
+
+    mock_client = MagicMock()
+    mock_client.chat = mock_chat
+    return mock_client
+
+
+async def test_compile_prompt_raises_on_non_json(monkeypatch):
+    """compile_prompt() must raise ValueError when LLM returns non-JSON content."""
+    from agent_runtime import compiler as compiler_module
+    from agent_runtime.compiler import compile_prompt
+
+    monkeypatch.setattr(
+        compiler_module, "_get_client", lambda: _make_mock_client("I cannot help")
+    )
+
+    with pytest.raises(ValueError, match="did not return valid JSON"):
+        await compile_prompt("do something")
+
+
+# ---------------------------------------------------------------------------
+# 6. compile_prompt raises RuntimeError on truncated output
+# ---------------------------------------------------------------------------
+
+
+async def test_compile_prompt_raises_on_truncation(monkeypatch):
+    """compile_prompt() must raise RuntimeError when finish_reason is 'length'."""
+    from agent_runtime import compiler as compiler_module
+    from agent_runtime.compiler import compile_prompt
+
+    monkeypatch.setattr(
+        compiler_module,
+        "_get_client",
+        lambda: _make_mock_client('{"name": "incomplete', finish_reason="length"),
+    )
+
+    with pytest.raises(RuntimeError, match="truncated"):
+        await compile_prompt("do something")

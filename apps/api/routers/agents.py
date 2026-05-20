@@ -2,24 +2,13 @@
 import json
 import yaml
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from ..database import get_db
 from ..models.agent import Agent
-from ..schemas.agent import AgentCreate, AgentOut, CompileRequest
-from ..services.compiler import compile_prompt_to_yaml
+from ..schemas.agent import AgentCreate, AgentOut
 
 router = APIRouter()
-
-@router.post("/agents/compile")
-async def compile_agent(req: CompileRequest):
-    async def generate():
-        async for token in compile_prompt_to_yaml(req.prompt):
-            yield f"data: {json.dumps({'token': token})}\n\n"
-        yield "data: [DONE]\n\n"
-
-    return StreamingResponse(generate(), media_type="text/event-stream")
 
 @router.post("/agents", response_model=AgentOut)
 async def create_agent(req: AgentCreate, db: AsyncSession = Depends(get_db)):

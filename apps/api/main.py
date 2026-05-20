@@ -19,10 +19,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from .routers import agents, sessions, tools
+from .routers import agents, sessions, tools, compile as compile_router
 app.include_router(agents.router, prefix="/v1")
 app.include_router(sessions.router, prefix="/v1")
 app.include_router(tools.router, prefix="/v1")
+app.include_router(compile_router.router, prefix="/v1")
 
 @app.get("/health")
 async def health():

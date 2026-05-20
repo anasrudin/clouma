@@ -1,12 +1,14 @@
 "use client"
-import { useRef } from "react"
-import { ArrowUp } from "lucide-react"
+import { useRef, useState } from "react"
+import { ArrowUp, ChevronDown, ChevronRight } from "lucide-react"
 import { useAgentStore } from "@/store/agent"
 import { cn } from "@/lib/utils"
+import { ToolCatalog } from "@/components/tool-catalog"
 
 export function QuickstartPanel({ onSubmit }: { onSubmit: (prompt: string) => void }) {
-  const { prompt, setPrompt, isCompiling } = useAgentStore()
+  const { prompt, setPrompt, isCompiling, tools } = useAgentStore()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [catalogOpen, setCatalogOpen] = useState(false)
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -55,6 +57,26 @@ export function QuickstartPanel({ onSubmit }: { onSubmit: (prompt: string) => vo
             Compiling agent spec...
           </p>
         )}
+
+        {/* Collapsible tool catalog */}
+        <div className="mt-2">
+          <button
+            onClick={() => setCatalogOpen((o) => !o)}
+            className="flex items-center gap-1 text-[10px] text-neutral-500 hover:text-neutral-300 transition-colors w-full"
+          >
+            {catalogOpen ? (
+              <ChevronDown size={10} className="shrink-0" />
+            ) : (
+              <ChevronRight size={10} className="shrink-0" />
+            )}
+            <span>Available tools ({tools.length})</span>
+          </button>
+          {catalogOpen && (
+            <div className="mt-1.5 max-h-48 overflow-y-auto">
+              <ToolCatalog compact />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

@@ -2,6 +2,20 @@
 import { create } from "zustand"
 
 // ---------------------------------------------------------------------------
+// Tool catalog types (Phase 5A)
+// ---------------------------------------------------------------------------
+
+export interface ToolDescriptor {
+  name: string
+  description: string
+  input_schema: {
+    type: "object"
+    properties: Record<string, { type: string; description?: string }>
+    required?: string[]
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Legacy StreamEvent union (UI mock events — kept for backward compatibility)
 // ---------------------------------------------------------------------------
 
@@ -61,6 +75,10 @@ export interface AgentStore {
   streamEvents: StreamEvent[]
   sessionStatus: "idle" | "running" | "completed" | "failed"
   currentStep: 1 | 2 | 3 | 4
+  // Tool catalog (Phase 5A)
+  tools: ToolDescriptor[]
+  toolsLoaded: boolean
+  loadTools: () => Promise<void>
   setPrompt: (p: string) => void
   setYaml: (y: string) => void
   setAgentName: (n: string) => void
@@ -75,6 +93,8 @@ export interface AgentStore {
   reset: () => void
 }
 
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+
 const initialState = {
   prompt: "",
   yaml: "",
@@ -86,10 +106,23 @@ const initialState = {
   streamEvents: [],
   sessionStatus: "idle" as const,
   currentStep: 1 as const,
+  tools: [] as ToolDescriptor[],
+  toolsLoaded: false,
 }
 
-export const useAgentStore = create<AgentStore>((set) => ({
+export const useAgentStore = create<AgentStore>((set, get) => ({
   ...initialState,
+  loadTools: async () => {
+    if (get().toolsLoaded) return
+    try {
+      const res = await fetch(`${API}/v1/tools`)
+      if (!res.ok) return
+      const data: ToolDescriptor[] = await res.json()
+      set({ tools: data, toolsLoaded: true })
+    } catch {
+      // fail silently — tools are optional UI enhancement
+    }
+  },
   setPrompt: (prompt) => set({ prompt }),
   setYaml: (yaml) => set({ yaml }),
   setAgentName: (agentName) => set({ agentName }),

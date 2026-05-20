@@ -43,6 +43,11 @@ def validate_agent_config(cfg: dict[str, Any]) -> None:
     """Validate an AgentConfig dict against tool registry, model allowlist, and required fields.
 
     Raises CompileValidationError if any check fails. Otherwise returns None.
+
+    Notes:
+    - Empty-string tool names in the ``tools`` list are silently skipped; they
+      are not flagged as unknown tools. Empty-string ``model`` is only flagged
+      via ``missing_required``, not ``invalid_model``.
     """
     delta = ValidationDelta()
 
@@ -51,16 +56,17 @@ def validate_agent_config(cfg: dict[str, Any]) -> None:
         if field_name not in cfg or cfg.get(field_name) in (None, ""):
             delta.missing_required.append(field_name)
 
-    # 2. Model allowlist (only if model is present — required-field check covers the missing case)
+    # 2. Model allowlist (only if model is a non-empty string — required-field check
+    #    already covers missing/None/""; empty string is only flagged as missing, not invalid)
     model = cfg.get("model")
-    if isinstance(model, str) and model not in MODEL_ALLOWLIST:
+    if isinstance(model, str) and model and model not in MODEL_ALLOWLIST:
         delta.invalid_model = model
 
-    # 3. Tool names
+    # 3. Tool names (blank/empty strings are skipped silently)
     tools = cfg.get("tools", [])
     if isinstance(tools, list):
         for tool_name in tools:
-            if isinstance(tool_name, str) and tool_name not in TOOL_REGISTRY:
+            if isinstance(tool_name, str) and tool_name and tool_name not in TOOL_REGISTRY:
                 delta.unknown_tools.append(tool_name)
 
     if delta.unknown_tools or delta.invalid_model or delta.missing_required:

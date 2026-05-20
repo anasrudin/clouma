@@ -10,6 +10,8 @@ from __future__ import annotations
 import json
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
+import openai
 import pytest
 
 
@@ -198,6 +200,79 @@ def test_compile_endpoint_streams_error_on_non_json_llm(api_client, monkeypatch)
     body = response.text
 
     assert "event: error" in body, f"Expected 'event: error' in body:\n{body}"
-    assert '"stage": "compile"' in body or "'stage': 'compile'" in body or "compile" in body, (
+    assert '"stage": "compile"' in body, (
         f"Expected compile stage in error body:\n{body}"
     )
+
+
+# ---------------------------------------------------------------------------
+# 8. Endpoint: streams error on openai.OpenAIError  (C1)
+# ---------------------------------------------------------------------------
+
+
+def test_compile_endpoint_streams_error_on_openai_error(api_client, monkeypatch):
+    """POST /v1/agents/compile must stream a compile-stage error when compile_prompt raises openai.OpenAIError."""
+    import api.routers.compile as compile_router_module
+
+    async def _raise_openai_error(prompt: str):
+        raise openai.APIConnectionError(
+            request=httpx.Request("POST", "https://example.openai.com/v1/chat/completions")
+        )
+
+    monkeypatch.setattr(compile_router_module, "compile_prompt", _raise_openai_error)
+
+    response = api_client.post(
+        "/v1/agents/compile",
+        json={"prompt": "something"},
+    )
+
+    assert response.status_code == 200
+    body = response.text
+
+    assert "event: error" in body, f"Expected 'event: error' in body:\n{body}"
+    assert '"stage": "compile"' in body, (
+        f"Expected compile stage in error body:\n{body}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 9. Validator: empty-string model only flagged as missing, not invalid  (I4)
+# ---------------------------------------------------------------------------
+
+
+def test_validator_empty_string_model_only_flagged_as_missing():
+    """validate_agent_config() must not add an empty model to invalid_model."""
+    from agent_runtime.validator import CompileValidationError, validate_agent_config
+
+    with pytest.raises(CompileValidationError) as exc_info:
+        validate_agent_config({
+            "name": "x",
+            "model": "",
+            "instruction": "do stuff",
+        })
+
+    delta = exc_info.value.delta
+    assert "model" in delta.missing_required, (
+        f"Expected 'model' in missing_required, got {delta.missing_required!r}"
+    )
+    assert delta.invalid_model is None, (
+        f"Expected invalid_model to be None, got {delta.invalid_model!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 10. Validator: empty-string tool name is silently skipped  (m1)
+# ---------------------------------------------------------------------------
+
+
+def test_validator_blank_tool_name_is_skipped():
+    """validate_agent_config() must not flag an empty string as an unknown tool."""
+    from agent_runtime.validator import validate_agent_config
+
+    # Should not raise — the blank tool name is silently ignored
+    validate_agent_config({
+        "name": "x",
+        "model": "qwen/qwen3-coder-480b-a35b-instruct",
+        "instruction": "do stuff",
+        "tools": ["web_search", ""],
+    })

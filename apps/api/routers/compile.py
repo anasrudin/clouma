@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 from typing import AsyncIterator
 
+import openai
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -36,8 +37,8 @@ async def _compile_stream(prompt: str) -> AsyncIterator[str]:
     yield _sse("status", {"phase": "calling_llm"})
     try:
         result = await compile_prompt(prompt)
-    except (ValueError, RuntimeError) as exc:
-        # LLM/JSON errors from compile_prompt (non-JSON, truncation)
+    except (ValueError, RuntimeError, openai.OpenAIError) as exc:
+        # LLM/JSON errors from compile_prompt (non-JSON, truncation, API errors)
         yield _sse("error", {"stage": "compile", "message": str(exc)})
         return
 

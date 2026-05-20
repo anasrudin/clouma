@@ -17,5 +17,3 @@ class AgentOut(BaseModel):
     class Config:
         from_attributes = True
 
-class CompileRequest(BaseModel):
-    prompt: str

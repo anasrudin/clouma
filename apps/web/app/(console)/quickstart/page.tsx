@@ -119,7 +119,7 @@ export default function QuickstartPage() {
         setViewMode("yaml")
       }
     },
-    [setCompiledConfig],
+    [setCompiledConfig, setDryRunResult, setSaveAnyway],
   )
 
   // ---------------------------------------------------------------------------

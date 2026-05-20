@@ -71,6 +71,7 @@ export function DryRunPanel({ config, onResult }: DryRunPanelProps) {
         {!loading && result !== null && result.events.length > 0 && (
           <button
             onClick={() => setEventsOpen((v) => !v)}
+            aria-expanded={eventsOpen}
             className="ml-auto text-[10px] text-neutral-500 hover:text-neutral-300 transition-colors"
           >
             {eventsOpen ? "Hide events" : `Show events (${result.events.length})`}

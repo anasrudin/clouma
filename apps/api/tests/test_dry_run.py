@@ -127,8 +127,8 @@ def test_dry_run_with_mocked_runner_returns_events(api_client, monkeypatch):
     mock_session_svc_cls = MagicMock(return_value=mock_session_svc)
 
     with (
-        patch("google.adk.runners.Runner", mock_runner_cls),
-        patch("google.adk.sessions.in_memory_session_service.InMemorySessionService", mock_session_svc_cls),
+        patch("api.routers.dry_run.Runner", mock_runner_cls),
+        patch("api.routers.dry_run.InMemorySessionService", mock_session_svc_cls),
     ):
         resp = api_client.post(
             "/v1/agents/dry-run",
@@ -176,8 +176,8 @@ def test_dry_run_timeout_returns_ok_false(api_client, monkeypatch):
     monkeypatch.setattr(dry_run_module, "DRY_RUN_TIMEOUT_SECONDS", 0.5)
 
     with (
-        patch("google.adk.runners.Runner", mock_runner_cls),
-        patch("google.adk.sessions.in_memory_session_service.InMemorySessionService", mock_session_svc_cls),
+        patch("api.routers.dry_run.Runner", mock_runner_cls),
+        patch("api.routers.dry_run.InMemorySessionService", mock_session_svc_cls),
     ):
         resp = api_client.post(
             "/v1/agents/dry-run",

@@ -11,6 +11,10 @@ from pydantic import BaseModel
 
 from agent_runtime.tools import TOOL_REGISTRY
 from agent_runtime.validator import validate_agent_config, CompileValidationError
+from google.adk.agents import LlmAgent
+from google.adk.runners import Runner
+from google.adk.sessions.in_memory_session_service import InMemorySessionService
+from google.genai.types import Content, Part
 
 router = APIRouter(prefix="/agents", tags=["dry-run"])
 
@@ -39,11 +43,6 @@ async def dry_run_agent(req: DryRunRequest) -> DryRunResponse:
         return DryRunResponse(ok=False, events=[], error=str(exc))
 
     # 2. Build in-memory Runner
-    from google.adk.agents import LlmAgent
-    from google.adk.runners import Runner
-    from google.adk.sessions.in_memory_session_service import InMemorySessionService
-    from google.genai.types import Content, Part
-
     cfg = req.config
     # Sanitize name for ADK (same regex used in runner_factory)
     safe_name = re.sub(r"[^A-Za-z0-9_]", "_", cfg["name"]) or "dry_run_agent"

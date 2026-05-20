@@ -1,5 +1,6 @@
 // lib/api.ts
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
+const API = API_BASE_URL
 
 export async function compileAgent(
   prompt: string,

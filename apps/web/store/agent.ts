@@ -1,5 +1,6 @@
 // store/agent.ts
 import { create } from "zustand"
+import { API_BASE_URL } from "@/lib/api"
 
 // ---------------------------------------------------------------------------
 // Tool catalog types (Phase 5A)
@@ -78,6 +79,8 @@ export interface AgentStore {
   // Tool catalog (Phase 5A)
   tools: ToolDescriptor[]
   toolsLoaded: boolean
+  /** Internal guard — do not use outside this store */
+  _toolsLoading: boolean
   loadTools: () => Promise<void>
   setPrompt: (p: string) => void
   setYaml: (y: string) => void
@@ -93,8 +96,6 @@ export interface AgentStore {
   reset: () => void
 }
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
-
 const initialState = {
   prompt: "",
   yaml: "",
@@ -108,19 +109,24 @@ const initialState = {
   currentStep: 1 as const,
   tools: [] as ToolDescriptor[],
   toolsLoaded: false,
+  _toolsLoading: false,
 }
 
 export const useAgentStore = create<AgentStore>((set, get) => ({
   ...initialState,
   loadTools: async () => {
-    if (get().toolsLoaded) return
+    const state = get()
+    if (state.toolsLoaded || state._toolsLoading) return
+    set({ _toolsLoading: true })
     try {
-      const res = await fetch(`${API}/v1/tools`)
+      const res = await fetch(`${API_BASE_URL}/v1/tools`)
       if (!res.ok) return
       const data: ToolDescriptor[] = await res.json()
       set({ tools: data, toolsLoaded: true })
     } catch {
       // fail silently — tools are optional UI enhancement
+    } finally {
+      set({ _toolsLoading: false })
     }
   },
   setPrompt: (prompt) => set({ prompt }),

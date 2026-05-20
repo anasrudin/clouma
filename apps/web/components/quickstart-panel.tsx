@@ -62,12 +62,13 @@ export function QuickstartPanel({ onSubmit }: { onSubmit: (prompt: string) => vo
         <div className="mt-2">
           <button
             onClick={() => setCatalogOpen((o) => !o)}
+            aria-expanded={catalogOpen}
             className="flex items-center gap-1 text-[10px] text-neutral-500 hover:text-neutral-300 transition-colors w-full"
           >
             {catalogOpen ? (
-              <ChevronDown size={10} className="shrink-0" />
+              <ChevronDown size={10} className="shrink-0" aria-hidden="true" />
             ) : (
-              <ChevronRight size={10} className="shrink-0" />
+              <ChevronRight size={10} className="shrink-0" aria-hidden="true" />
             )}
             <span>Available tools ({tools.length})</span>
           </button>

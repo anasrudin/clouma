@@ -66,7 +66,7 @@ export function ToolCatalog({ compact = false }: ToolCatalogProps) {
 
   if (!toolsLoaded) {
     return (
-      <div className={`grid gap-1.5 ${compact ? "grid-cols-2" : "grid-cols-2"}`}>
+      <div className={`grid gap-1.5 ${compact ? "grid-cols-2" : "grid-cols-2 md:grid-cols-3"}`}>
         {Array.from({ length: compact ? 4 : 6 }).map((_, i) => (
           <SkeletonCard key={i} />
         ))}
@@ -83,7 +83,7 @@ export function ToolCatalog({ compact = false }: ToolCatalogProps) {
   }
 
   return (
-    <div className={`grid gap-1.5 ${compact ? "grid-cols-2" : "grid-cols-2"}`}>
+    <div className={`grid gap-1.5 ${compact ? "grid-cols-2" : "grid-cols-2 md:grid-cols-3"}`}>
       {tools.map((tool) => (
         <ToolCard key={tool.name} tool={tool} compact={compact} />
       ))}

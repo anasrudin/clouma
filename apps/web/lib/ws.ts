@@ -42,7 +42,10 @@ export function connectSessionStream(
   }
 
   ws.onmessage = (e) => {
-    try { onMessage(JSON.parse(e.data)) } catch {}
+    try { onMessage(JSON.parse(e.data)) }
+    catch (err) {
+      console.warn("[ws] Failed to parse frame:", e.data, err)
+    }
   }
   ws.onclose = () => onClose?.()
   ws.onerror = () => ws.close()

@@ -20,7 +20,10 @@ instead we use both in parallel until the UI migrates fully.
 """
 from __future__ import annotations
 
+import asyncio
 import uuid
+
+WS_INPUT_TIMEOUT = 300
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from google.adk.events.event import Event
@@ -138,7 +141,11 @@ async def session_ws(websocket: WebSocket, session_id: str):
         # Step 4: receive user messages and stream responses
         # ----------------------------------------------------------------
         while True:
-            msg = await websocket.receive_json()
+            try:
+                msg = await asyncio.wait_for(websocket.receive_json(), timeout=WS_INPUT_TIMEOUT)
+            except asyncio.TimeoutError:
+                await websocket.send_json({"type": "stream_error", "error": f"No input received in {WS_INPUT_TIMEOUT}s; closing."})
+                return
             user_text: str = msg.get("input", "")
             if not user_text:
                 continue

@@ -9,7 +9,7 @@ Tests
 2. test_ws_returns_error_on_missing_agent
    Init with an unknown agent_id → server sends stream_error and exits.
 
-3. test_e2e_compile_save_run
+3. test_integration_compile_save_ws_stream
    Chain:
      a. POST /v1/agents/compile  (mocked → returns valid AgentConfig)
      b. POST /v1/agents           (save the agent)
@@ -160,12 +160,8 @@ def test_ws_missing_agent_id_in_init():
 # ---------------------------------------------------------------------------
 
 
-def test_e2e_compile_save_run(monkeypatch):
-    """Phase 4.5 E2E test: compile config, save agent, stream via WS.
-
-    Mocks:
-    - compile_prompt: returns a valid AgentConfig (no real LLM call)
-    - build_runner: returns a fake runner (no real ADK execution)
+def test_integration_compile_save_ws_stream(monkeypatch):
+    """Integration test: HTTP compile→save chain is real against the test DB; build_runner is mocked because the real ADK Runner needs a live LLM. Each layer has its own unit tests in test_runner_factory.py and test_session_service.py.
 
     Chain:
     1. POST /v1/agents/compile  → get config from SSE stream

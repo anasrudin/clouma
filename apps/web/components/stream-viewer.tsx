@@ -47,8 +47,7 @@ function TextPart({ text }: { text: string }) {
   return <span className="text-neutral-300 text-[11px] whitespace-pre-wrap">{text}</span>
 }
 
-function FunctionCallPart({ part }: { part: AdkPart["function_call"] }) {
-  if (!part) return null
+function FunctionCallPart({ part }: { part: { id?: string; name: string; args: Record<string, unknown> } }) {
   const argsStr = JSON.stringify(part.args ?? {}, null, 0)
   return (
     <div className="flex items-start gap-2 py-1">
@@ -58,8 +57,7 @@ function FunctionCallPart({ part }: { part: AdkPart["function_call"] }) {
   )
 }
 
-function FunctionResponsePart({ part }: { part: AdkPart["function_response"] }) {
-  if (!part) return null
+function FunctionResponsePart({ part }: { part: { id?: string; name: string; response: Record<string, unknown> } }) {
   const respStr = JSON.stringify(part.response ?? {}, null, 0)
   return (
     <div className="flex items-start gap-2 py-1">
@@ -91,13 +89,13 @@ function AdkEventRow({ event }: { event: AdkEvent }) {
           <AuthorBadge author={event.author} />
           <div className="flex flex-col gap-0.5 min-w-0 flex-1">
             {parts.map((part, i) => {
-              if (part.text !== undefined && part.text !== "") {
+              if ("text" in part && part.text !== "") {
                 return <TextPart key={i} text={part.text} />
               }
-              if (part.function_call) {
+              if ("function_call" in part) {
                 return <FunctionCallPart key={i} part={part.function_call} />
               }
-              if (part.function_response) {
+              if ("function_response" in part) {
                 return <FunctionResponsePart key={i} part={part.function_response} />
               }
               return null
@@ -210,9 +208,10 @@ export function StreamViewer() {
         </span>
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-3 font-mono leading-relaxed">
-        {streamEvents.map((e, i) => (
-          <EventRow key={i} event={e} />
-        ))}
+        {streamEvents.map((e, i) => {
+          const key = e.type === "adk_event" ? (e.raw.id ?? i) : i
+          return <EventRow key={key} event={e} />
+        })}
       </div>
     </div>
   )

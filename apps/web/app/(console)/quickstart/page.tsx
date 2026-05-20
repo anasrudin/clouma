@@ -53,6 +53,7 @@ export default function QuickstartPage() {
       setCurrentStep(3)
       const disconnect = connectSessionStream(
         session.id,
+        { agentId: agentId! },
         (data) => {
           const event = data as Parameters<typeof addStreamEvent>[0]
           addStreamEvent(event)

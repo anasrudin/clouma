@@ -19,19 +19,10 @@ export type StreamEvent =
 // ADK 2.0 Event shape (subset of fields returned by event.model_dump())
 // ---------------------------------------------------------------------------
 
-export interface AdkPart {
-  text?: string
-  function_call?: {
-    id?: string
-    name: string
-    args: Record<string, unknown>
-  }
-  function_response?: {
-    id?: string
-    name: string
-    response: Record<string, unknown>
-  }
-}
+export type AdkPart =
+  | { text: string }
+  | { function_call: { id?: string; name: string; args: Record<string, unknown> } }
+  | { function_response: { id?: string; name: string; response: Record<string, unknown> } }
 
 export interface AdkContent {
   role?: string

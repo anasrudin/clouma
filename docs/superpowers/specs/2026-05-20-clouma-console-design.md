@@ -115,12 +115,9 @@ Claude Console  [logo]
    Environments
    Credential vaults
    Memory stores
-📊 Analytics ▸
-⚡ Claude Code ▸
-⚙️ Manage ▸
+⚙️ Setting ▸
 ─────────────────────
 📖 Documentation
-🕐 Credits  $0.00
 👤 razor  Admin · org ▾
 ```
 

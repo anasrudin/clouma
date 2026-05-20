@@ -48,6 +48,7 @@ export default function QuickstartPage() {
   const [viewMode, setViewMode] = useState<"form" | "yaml">("form")
   const [yamlError, setYamlError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [isDirty, setIsDirty] = useState(false)
 
   // Ensure tool catalog is loaded for the form view
   useEffect(() => {
@@ -77,6 +78,7 @@ export default function QuickstartPage() {
           const parsed = yaml.parse(accumulated) as AgentConfig
           setCompiledConfig(parsed)
           setViewMode("form") // default to form view after compile
+          setIsDirty(true)
         } catch (parseErr) {
           setYamlError(
             parseErr instanceof Error ? parseErr.message : "YAML parse error",
@@ -99,6 +101,7 @@ export default function QuickstartPage() {
         const parsed = yaml.parse(yamlContent) as AgentConfig
         setCompiledConfig(parsed)
         setViewMode("form")
+        setIsDirty(true)
       } catch {
         setCompiledConfig(null)
         setViewMode("yaml")
@@ -115,6 +118,7 @@ export default function QuickstartPage() {
     (next: AgentConfig) => {
       setCompiledConfig(next)
       setValidationErrors(null)
+      setIsDirty(true)
       // Keep yaml store in sync so switching to YAML view is consistent
       try {
         const yamlContent = yaml.stringify(next)
@@ -143,8 +147,9 @@ export default function QuickstartPage() {
         const created = await createAgentFromConfig(configPayload)
         setAgentId(created.id)
       }
+      setIsDirty(false)
     } catch (e: unknown) {
-      const apiErr = e as { status?: number; detail?: unknown }
+      const apiErr = e as { status?: number; detail?: unknown; message?: string }
       if (apiErr?.status === 422) {
         const detail = apiErr.detail as {
           message?: string
@@ -155,8 +160,11 @@ export default function QuickstartPage() {
         }
         const msg = detail?.message ?? "Validation failed"
         setYamlError(msg)
+      } else if (apiErr?.status === 409) {
+        setYamlError("An agent with this name already exists. Choose a different name.")
       } else {
         console.error("Save error", e)
+        setYamlError(apiErr?.message ?? "Save failed. Try again.")
       }
     } finally {
       setIsSaving(false)
@@ -283,10 +291,10 @@ export default function QuickstartPage() {
               {compiledConfig && !agentId && (
                 <button
                   onClick={handleSave}
-                  disabled={isSaving}
+                  disabled={!isDirty || isSaving}
                   className={cn(
                     "ml-auto text-[10px] font-semibold px-3 py-1 rounded transition-colors",
-                    isSaving
+                    !isDirty || isSaving
                       ? "bg-white/[0.06] text-neutral-500 cursor-not-allowed"
                       : "bg-indigo-600 hover:bg-indigo-500 text-white",
                   )}
@@ -297,10 +305,10 @@ export default function QuickstartPage() {
               {compiledConfig && agentId && (
                 <button
                   onClick={handleSave}
-                  disabled={isSaving}
+                  disabled={!isDirty || isSaving}
                   className={cn(
                     "ml-auto text-[10px] font-semibold px-3 py-1 rounded transition-colors",
-                    isSaving
+                    !isDirty || isSaving
                       ? "bg-white/[0.06] text-neutral-500 cursor-not-allowed"
                       : "bg-white/[0.06] hover:bg-white/[0.1] text-neutral-300 border border-white/[0.08]",
                   )}

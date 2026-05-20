@@ -270,6 +270,36 @@ def test_patch_agent_rejects_invalid_tool(api_client):
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# 12. test_patch_agent_not_found_returns_404_even_with_invalid_config
+# ---------------------------------------------------------------------------
+
+
+def test_patch_agent_not_found_returns_404_even_with_invalid_config(api_client):
+    """PATCH to a nonexistent agent ID returns 404 even when the payload has invalid tools.
+
+    Previously the validate-first order would return 422 before checking existence.
+    """
+    bad_config = {
+        "name": "ghost-agent",
+        "model": "gemini-flash-latest",
+        "instruction": "I do not exist.",
+        "tools": ["totally_bogus_tool"],
+    }
+    response = api_client.patch(
+        "/v1/agents/00000000-0000-0000-0000-000000000000",
+        json={"config": bad_config},
+    )
+    assert response.status_code == 404, (
+        f"Expected 404 for nonexistent agent id, got {response.status_code}: {response.text}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 9. test_create_agent_propagates_unexpected_errors
+# ---------------------------------------------------------------------------
+
+
 def test_create_agent_propagates_unexpected_errors():
     """A non-IntegrityError from db.commit() should propagate as 500, not 409.
 

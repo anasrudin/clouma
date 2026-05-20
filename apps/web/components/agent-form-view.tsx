@@ -73,8 +73,17 @@ export function AgentFormView({
   }
 
   const nameHasError = errors?.missing_required?.includes("name") ?? false
+  const namePattern = /^[a-z][a-z0-9_]*$/
+  const nameFormatError =
+    config.name && !namePattern.test(config.name)
+      ? "Name must be lowercase, start with a letter, only letters/digits/underscores"
+      : null
   const modelHasError = (errors?.invalid_model != null && errors.invalid_model !== "")
   const unknownTools = new Set(errors?.unknown_tools ?? [])
+
+  // Orphan tools: selected in config but not present in the catalog
+  const catalogNames = new Set(tools.map((t) => t.name))
+  const orphanTools = (config.tools ?? []).filter((name) => !catalogNames.has(name))
 
   return (
     <div className="flex flex-col gap-4 p-4 overflow-y-auto h-full">
@@ -85,9 +94,14 @@ export function AgentFormView({
           onChange={(e) => setField("name", e.target.value)}
           placeholder="my-agent"
           pattern="^[a-z][a-z0-9_]*$"
-          className={cn(inputBase, nameHasError ? inputError : inputNormal)}
+          className={cn(
+            inputBase,
+            nameFormatError || (nameHasError && !config.name) ? inputError : inputNormal,
+          )}
         />
-        {nameHasError ? (
+        {nameFormatError ? (
+          <p className="text-amber-400 text-[10px] mt-1">{nameFormatError}</p>
+        ) : nameHasError ? (
           <p className="text-[10px] text-red-400">Name is required</p>
         ) : (
           <p className="text-[10px] text-neutral-600">
@@ -155,7 +169,7 @@ export function AgentFormView({
 
       {/* Tools */}
       <Field label="Tools">
-        {tools.length === 0 ? (
+        {tools.length === 0 && orphanTools.length === 0 ? (
           <p className="text-[10px] text-neutral-600">
             No tools available — start the API server to load the tool catalog.
           </p>
@@ -203,6 +217,23 @@ export function AgentFormView({
                 </label>
               )
             })}
+
+            {/* Orphan tools: selected in config but not in catalog */}
+            {orphanTools.map((name) => (
+              <label
+                key={name}
+                className="flex items-center gap-2.5 p-2 rounded border cursor-pointer transition-colors bg-amber-500/10 border-amber-500/30"
+              >
+                <input
+                  type="checkbox"
+                  checked={true}
+                  onChange={() => toggleTool(name)}
+                  className="mt-0.5 accent-amber-500 shrink-0"
+                />
+                <span className="font-mono text-xs text-amber-300">{name}</span>
+                <span className="text-amber-400/70 text-[10px] ml-auto">unknown</span>
+              </label>
+            ))}
           </div>
         )}
       </Field>

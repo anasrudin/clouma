@@ -11,11 +11,24 @@ from typing import Any
 from agent_runtime.tools import TOOL_REGISTRY
 
 
-# Phase 2B allowlist. Expand as needed; matches the plan.
+# Phase 2B allowlist. Finite + auditable — not a wildcard.
+# Note: the compiler system prompt instructs the LLM to use `settings.llm_model`.
+# If settings.llm_model is set to a value not in this list, the validate step
+# will reject compiled output. Expand this list as new models are provisioned.
 MODEL_ALLOWLIST: frozenset[str] = frozenset({
-    "gemini-flash-latest",
+    # OpenAI
     "gpt-4o-mini",
+    # Anthropic (via proxy)
+    "claude-haiku-4-5",
+    # Google (Gemini)
+    "gemini-flash-latest",
+    # NVIDIA NIM (most popular models; covers the .env.example default)
+    "meta/llama-3.1-70b-instruct",
+    "meta/llama-3.1-8b-instruct",
+    "meta/llama-3.1-405b-instruct",
+    "nvidia/llama-3.1-nemotron-70b-instruct",
     "qwen/qwen3-coder-480b-a35b-instruct",
+    "qwen/qwen3-next-80b-a3b-instruct",
 })
 
 

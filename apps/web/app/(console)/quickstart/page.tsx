@@ -65,7 +65,7 @@ export default function QuickstartPage() {
 
 
   // ---------------------------------------------------------------------------
-  // Compile handler: stream tokens → yaml, then parse into compiledConfig
+  // Compile handler: SSE stream → result.config → compiledConfig
   // ---------------------------------------------------------------------------
 
   const handleCompile = useCallback(
@@ -77,26 +77,26 @@ export default function QuickstartPage() {
       setYamlError(null)
       setDryRunResult(null)
       setSaveAnyway(false)
-      let accumulated = ""
       try {
-        await compileAgent(prompt, (token) => {
-          accumulated += token
-          useAgentStore.setState((s) => ({ yaml: s.yaml + token }))
+        const result = await compileAgent(prompt, (phase) => {
+          console.log("[compile] phase:", phase)
         })
-        // Parse the completed YAML into a typed config
+        // Use result.config directly — no YAML round-trip needed
+        setCompiledConfig(result.config)
+        // Populate the YAML editor view by serializing the config
         try {
-          const parsed = yaml.parse(accumulated) as AgentConfig
-          setCompiledConfig(parsed)
-          setViewMode("form") // default to form view after compile
-          setIsDirty(true)
-        } catch (parseErr) {
-          setYamlError(
-            parseErr instanceof Error ? parseErr.message : "YAML parse error",
-          )
-          setViewMode("yaml")
+          const yamlStr = yaml.stringify(result.config)
+          setYaml(yamlStr)
+        } catch {
+          // best-effort
         }
+        setViewMode("form") // default to form view after compile
+        setIsDirty(true)
       } catch (e) {
         console.error("Compile error", e)
+        const msg = e instanceof Error ? e.message : "Compile failed"
+        setYamlError(msg)
+        setViewMode("yaml")
       } finally {
         setIsCompiling(false)
       }

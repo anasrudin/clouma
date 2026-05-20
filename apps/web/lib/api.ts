@@ -2,32 +2,94 @@
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
 const API = API_BASE_URL
 
+export interface AgentConfig {
+  name: string
+  model: string
+  instruction: string
+  description?: string
+  tools?: string[]
+  [key: string]: unknown
+}
+
+export interface CompileResult {
+  config: AgentConfig
+}
+
+/**
+ * POST /v1/agents/compile — SSE stream that emits:
+ *   event: status  data: {"phase":"discovering_tools"|"calling_llm"|"validating"}
+ *   event: result  data: {"config": {AgentConfig}}
+ *   event: error   data: {"stage":"compile"|"validate","message":"...","delta":{...}}
+ *
+ * Resolves with the config dict on success; rejects with an Error on error events.
+ * onStatus is called with the phase string for each status event (optional).
+ */
 export async function compileAgent(
   prompt: string,
-  onToken: (token: string) => void
-): Promise<void> {
+  onStatus?: (phase: string) => void,
+): Promise<CompileResult> {
   const res = await fetch(`${API}/v1/agents/compile`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ prompt }),
   })
   if (!res.body) throw new Error("No response body")
+
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
+  let buffer = ""
+
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
-    const lines = decoder.decode(value).split("\n")
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue
-      const data = line.slice(6).trim()
-      if (data === "[DONE]") return
+    buffer += decoder.decode(value, { stream: true })
+
+    // SSE frames are separated by double newline
+    const frames = buffer.split("\n\n")
+    // The last element may be an incomplete frame — keep it in the buffer
+    buffer = frames.pop() ?? ""
+
+    for (const frame of frames) {
+      if (!frame.trim()) continue
+
+      let eventType = "message"
+      let dataLine = ""
+
+      for (const line of frame.split("\n")) {
+        if (line.startsWith("event: ")) {
+          eventType = line.slice(7).trim()
+        } else if (line.startsWith("data: ")) {
+          dataLine = line.slice(6).trim()
+        }
+      }
+
+      if (!dataLine) continue
+
       try {
-        const parsed = JSON.parse(data)
-        if (parsed.token) onToken(parsed.token)
-      } catch {}
+        const parsed = JSON.parse(dataLine)
+
+        if (eventType === "status") {
+          const phase = parsed.phase as string
+          console.log("[compile] status:", phase)
+          onStatus?.(phase)
+        } else if (eventType === "result") {
+          return { config: parsed.config as AgentConfig }
+        } else if (eventType === "error") {
+          const msg = parsed.message ?? "Compile error"
+          const err = new Error(msg) as Error & { stage: string; delta: unknown }
+          err.stage = parsed.stage
+          err.delta = parsed.delta
+          throw err
+        }
+      } catch (e) {
+        // Re-throw errors we deliberately constructed above
+        if (e instanceof Error && (e as { stage?: string }).stage) throw e
+        // Silently skip malformed frames
+      }
     }
   }
+
+  throw new Error("SSE stream ended without a result or error event")
 }
 
 export async function createAgent(name: string, yaml_config: string) {

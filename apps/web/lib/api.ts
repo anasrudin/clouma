@@ -95,3 +95,45 @@ export async function createSession(agent_id: string) {
   if (!res.ok) throw new Error("Failed to create session")
   return res.json()
 }
+
+// ---------------------------------------------------------------------------
+// Phase 6: Dry-run
+// ---------------------------------------------------------------------------
+
+export interface DryRunResult {
+  ok: boolean
+  events: Record<string, unknown>[]
+  error: string | null
+  elapsed_ms: number | null
+}
+
+/**
+ * POST /v1/agents/dry-run — build an in-memory runner, run one turn, return events.
+ * Always resolves (never throws) — check `result.ok` for success/failure.
+ */
+export async function dryRunAgent(config: Record<string, unknown>): Promise<DryRunResult> {
+  try {
+    const res = await fetch(`${API}/v1/agents/dry-run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ config }),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      return {
+        ok: false,
+        events: [],
+        error: body.detail ?? `HTTP ${res.status}`,
+        elapsed_ms: null,
+      }
+    }
+    return res.json() as Promise<DryRunResult>
+  } catch (err) {
+    return {
+      ok: false,
+      events: [],
+      error: err instanceof Error ? err.message : "Network error",
+      elapsed_ms: null,
+    }
+  }
+}

@@ -2,13 +2,14 @@
 import { useCallback, useEffect, useState } from "react"
 import yaml from "yaml"
 import { useAgentStore } from "@/store/agent"
-import { compileAgent, createAgentFromConfig, patchAgent } from "@/lib/api"
+import { compileAgent, createAgentFromConfig, patchAgent, type DryRunResult } from "@/lib/api"
 import { connectSessionStream } from "@/lib/ws"
 import { QuickstartPanel } from "@/components/quickstart-panel"
 import { TemplateBrowser } from "@/components/template-browser"
 import { YamlEditor } from "@/components/yaml-editor"
 import { StreamViewer } from "@/components/stream-viewer"
 import { AgentFormView } from "@/components/agent-form-view"
+import { DryRunPanel } from "@/components/dry-run-panel"
 import { cn } from "@/lib/utils"
 import type { AgentConfig, ValidationDelta } from "@/store/agent"
 
@@ -49,6 +50,13 @@ export default function QuickstartPage() {
   const [yamlError, setYamlError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
   const [isDirty, setIsDirty] = useState(false)
+  // Phase 6: dry-run result + "save anyway" override
+  const [dryRunResult, setDryRunResult] = useState<DryRunResult | null>(null)
+  const [saveAnyway, setSaveAnyway] = useState(false)
+
+  // After a failed dry-run, Save is disabled unless the user checks "Save anyway".
+  // Before any test (dryRunResult === null), Save works normally.
+  const dryRunBlocking = dryRunResult !== null && !dryRunResult.ok && !saveAnyway
 
   // Ensure tool catalog is loaded for the form view
   useEffect(() => {
@@ -67,6 +75,8 @@ export default function QuickstartPage() {
       setCompiledConfig(null)
       setValidationErrors(null)
       setYamlError(null)
+      setDryRunResult(null)
+      setSaveAnyway(false)
       let accumulated = ""
       try {
         await compileAgent(prompt, (token) => {
@@ -97,6 +107,8 @@ export default function QuickstartPage() {
   const handleTemplateSelect = useCallback(
     (yamlContent: string, name: string) => {
       useAgentStore.setState({ yaml: yamlContent, agentName: name })
+      setDryRunResult(null)
+      setSaveAnyway(false)
       try {
         const parsed = yaml.parse(yamlContent) as AgentConfig
         setCompiledConfig(parsed)
@@ -289,34 +301,72 @@ export default function QuickstartPage() {
               </div>
               {/* Save button */}
               {compiledConfig && !agentId && (
-                <button
-                  onClick={handleSave}
-                  disabled={!isDirty || isSaving}
-                  className={cn(
-                    "ml-auto text-[10px] font-semibold px-3 py-1 rounded transition-colors",
-                    !isDirty || isSaving
-                      ? "bg-white/[0.06] text-neutral-500 cursor-not-allowed"
-                      : "bg-indigo-600 hover:bg-indigo-500 text-white",
+                <div className="ml-auto flex items-center gap-2">
+                  {dryRunBlocking && (
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={saveAnyway}
+                        onChange={(e) => setSaveAnyway(e.target.checked)}
+                        className="accent-indigo-500"
+                      />
+                      <span className="text-[10px] text-neutral-500">Save anyway</span>
+                    </label>
                   )}
-                >
-                  {isSaving ? "Saving…" : "Save agent"}
-                </button>
+                  <button
+                    onClick={handleSave}
+                    disabled={!isDirty || isSaving || dryRunBlocking}
+                    className={cn(
+                      "text-[10px] font-semibold px-3 py-1 rounded transition-colors",
+                      !isDirty || isSaving || dryRunBlocking
+                        ? "bg-white/[0.06] text-neutral-500 cursor-not-allowed"
+                        : "bg-indigo-600 hover:bg-indigo-500 text-white",
+                    )}
+                  >
+                    {isSaving ? "Saving…" : "Save agent"}
+                  </button>
+                </div>
               )}
               {compiledConfig && agentId && (
-                <button
-                  onClick={handleSave}
-                  disabled={!isDirty || isSaving}
-                  className={cn(
-                    "ml-auto text-[10px] font-semibold px-3 py-1 rounded transition-colors",
-                    !isDirty || isSaving
-                      ? "bg-white/[0.06] text-neutral-500 cursor-not-allowed"
-                      : "bg-white/[0.06] hover:bg-white/[0.1] text-neutral-300 border border-white/[0.08]",
+                <div className="ml-auto flex items-center gap-2">
+                  {dryRunBlocking && (
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={saveAnyway}
+                        onChange={(e) => setSaveAnyway(e.target.checked)}
+                        className="accent-indigo-500"
+                      />
+                      <span className="text-[10px] text-neutral-500">Save anyway</span>
+                    </label>
                   )}
-                >
-                  {isSaving ? "Saving…" : "Save changes"}
-                </button>
+                  <button
+                    onClick={handleSave}
+                    disabled={!isDirty || isSaving || dryRunBlocking}
+                    className={cn(
+                      "text-[10px] font-semibold px-3 py-1 rounded transition-colors",
+                      !isDirty || isSaving || dryRunBlocking
+                        ? "bg-white/[0.06] text-neutral-500 cursor-not-allowed"
+                        : "bg-white/[0.06] hover:bg-white/[0.1] text-neutral-300 border border-white/[0.08]",
+                    )}
+                  >
+                    {isSaving ? "Saving…" : "Save changes"}
+                  </button>
+                </div>
               )}
             </div>
+
+            {/* Dry-run panel (only shown in form view with a config) */}
+            {viewMode === "form" && compiledConfig && (
+              <DryRunPanel
+                config={compiledConfig}
+                onResult={(r) => {
+                  setDryRunResult(r)
+                  // Reset "save anyway" whenever a new test result arrives
+                  setSaveAnyway(false)
+                }}
+              />
+            )}
 
             {/* Editor pane */}
             <div className="flex-1 overflow-hidden">

@@ -44,7 +44,8 @@ class ToolEntry:
     description: str
     input_schema: dict  # JSON Schema object with "type": "object" + "properties"
     fn: Callable[..., Any]  # underlying callable
-    adk_tool: Any  # FunctionTool instance, or None if ADK not installed
+    # None when google-adk is not installed; downstream code must check before use.
+    adk_tool: "FunctionTool | None"  # FunctionTool instance, or None if ADK not installed
 
 
 # ---------------------------------------------------------------------------
@@ -71,6 +72,9 @@ def _build_input_schema(fn: Callable[..., Any]) -> dict:
 
     fields: dict[str, Any] = {}
     for param_name, param in sig.parameters.items():
+        # Skip *args and **kwargs — they have no place in a JSON Schema object
+        if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+            continue
         ann = hints.get(param_name, Any)
         if param.default is inspect.Parameter.empty:
             fields[param_name] = (ann, ...)  # required
@@ -83,6 +87,11 @@ def _build_input_schema(fn: Callable[..., Any]) -> dict:
 
     model = create_model(f"{fn.__name__}_input", **fields)
     schema = model.model_json_schema()
+    # Strip pydantic-emitted "title" fields — not part of the JSON Schema
+    # function-calling convention used by OpenAI/ADK.
+    schema.pop("title", None)
+    for prop in schema.get("properties", {}).values():
+        prop.pop("title", None)
     return schema
 
 

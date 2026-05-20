@@ -118,3 +118,49 @@ def test_current_time_returns_iso_string():
 
     # Sanity: returned time should be reasonably recent (within the last hour)
     assert parsed is not None
+
+
+# ---------------------------------------------------------------------------
+# 6. Variadic **kwargs are excluded from the schema
+# ---------------------------------------------------------------------------
+
+
+def test_variadic_kwargs_excluded_from_schema():
+    """A function with **kwargs must NOT produce a 'kwargs' property in its schema."""
+    from agent_runtime.tools import TOOL_REGISTRY, register_tool
+
+    test_name = "_test_variadic_kwargs_sentinel_xyzzy"
+    assert test_name not in TOOL_REGISTRY, "Test sentinel name already taken"
+
+    @register_tool(name=test_name, description="Variadic test tool")
+    def _variadic(x: int, **kwargs):
+        pass
+
+    schema = TOOL_REGISTRY[test_name].input_schema
+    assert "kwargs" not in schema.get("properties", {}), (
+        f"'kwargs' must not appear in schema properties; got: {schema}"
+    )
+
+    # Cleanup
+    TOOL_REGISTRY.pop(test_name, None)
+
+
+# ---------------------------------------------------------------------------
+# 7. Pydantic "title" noise is stripped from the schema
+# ---------------------------------------------------------------------------
+
+
+def test_web_search_schema_has_no_title_noise():
+    """web_search schema must not carry pydantic-emitted 'title' at top level or in properties."""
+    from agent_runtime.tools import TOOL_REGISTRY
+
+    assert "web_search" in TOOL_REGISTRY, "web_search not registered"
+    schema = TOOL_REGISTRY["web_search"].input_schema
+
+    assert "title" not in schema, (
+        f"Top-level 'title' must be stripped from schema; got: {schema.get('title')!r}"
+    )
+    for prop_name, prop in schema.get("properties", {}).items():
+        assert "title" not in prop, (
+            f"Property '{prop_name}' must not have a 'title' field; got: {prop.get('title')!r}"
+        )

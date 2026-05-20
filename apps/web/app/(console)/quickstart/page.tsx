@@ -1,53 +1,196 @@
 "use client"
-import { useCallback } from "react"
+import { useCallback, useEffect, useState } from "react"
+import yaml from "yaml"
 import { useAgentStore } from "@/store/agent"
-import { compileAgent, createAgent, createSession } from "@/lib/api"
+import { compileAgent, createAgentFromConfig, patchAgent } from "@/lib/api"
 import { connectSessionStream } from "@/lib/ws"
 import { QuickstartPanel } from "@/components/quickstart-panel"
 import { TemplateBrowser } from "@/components/template-browser"
 import { YamlEditor } from "@/components/yaml-editor"
 import { StreamViewer } from "@/components/stream-viewer"
+import { AgentFormView } from "@/components/agent-form-view"
+import { cn } from "@/lib/utils"
+import type { AgentConfig, ValidationDelta } from "@/store/agent"
+
+// ---------------------------------------------------------------------------
+// View mode toggle classes
+// ---------------------------------------------------------------------------
+
+const toggleBtn =
+  "text-[10px] font-medium px-2.5 py-1 rounded transition-colors"
+const toggleActive =
+  "bg-indigo-600 text-white"
+const toggleInactive =
+  "text-neutral-500 hover:text-neutral-300"
 
 export default function QuickstartPage() {
   const {
-    yaml, agentId, sessionId,
-    setYaml, setIsCompiling, setAgentId, setSessionId,
-    addStreamEvent, clearStreamEvents, setSessionStatus,
+    yaml: yamlStr,
+    agentId,
+    sessionId,
+    tools,
+    compiledConfig,
+    validationErrors,
+    setYaml,
+    setIsCompiling,
+    setAgentId,
+    setSessionId,
+    addStreamEvent,
+    clearStreamEvents,
+    setSessionStatus,
     setCurrentStep,
+    setCompiledConfig,
+    setValidationErrors,
+    loadTools,
   } = useAgentStore()
 
-  const handleCompile = useCallback(async (prompt: string) => {
-    setIsCompiling(true)
-    setYaml("")
+  // "form" is the default view after compile; "yaml" shows Monaco
+  const [viewMode, setViewMode] = useState<"form" | "yaml">("form")
+  const [yamlError, setYamlError] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+
+  // Ensure tool catalog is loaded for the form view
+  useEffect(() => {
+    loadTools()
+  }, [loadTools])
+
+
+  // ---------------------------------------------------------------------------
+  // Compile handler: stream tokens → yaml, then parse into compiledConfig
+  // ---------------------------------------------------------------------------
+
+  const handleCompile = useCallback(
+    async (prompt: string) => {
+      setIsCompiling(true)
+      setYaml("")
+      setCompiledConfig(null)
+      setValidationErrors(null)
+      setYamlError(null)
+      let accumulated = ""
+      try {
+        await compileAgent(prompt, (token) => {
+          accumulated += token
+          useAgentStore.setState((s) => ({ yaml: s.yaml + token }))
+        })
+        // Parse the completed YAML into a typed config
+        try {
+          const parsed = yaml.parse(accumulated) as AgentConfig
+          setCompiledConfig(parsed)
+          setViewMode("form") // default to form view after compile
+        } catch (parseErr) {
+          setYamlError(
+            parseErr instanceof Error ? parseErr.message : "YAML parse error",
+          )
+          setViewMode("yaml")
+        }
+      } catch (e) {
+        console.error("Compile error", e)
+      } finally {
+        setIsCompiling(false)
+      }
+    },
+    [setIsCompiling, setYaml, setCompiledConfig, setValidationErrors],
+  )
+
+  const handleTemplateSelect = useCallback(
+    (yamlContent: string, name: string) => {
+      useAgentStore.setState({ yaml: yamlContent, agentName: name })
+      try {
+        const parsed = yaml.parse(yamlContent) as AgentConfig
+        setCompiledConfig(parsed)
+        setViewMode("form")
+      } catch {
+        setCompiledConfig(null)
+        setViewMode("yaml")
+      }
+    },
+    [setCompiledConfig],
+  )
+
+  // ---------------------------------------------------------------------------
+  // Form view onChange: keep compiledConfig + yaml in sync
+  // ---------------------------------------------------------------------------
+
+  const handleFormChange = useCallback(
+    (next: AgentConfig) => {
+      setCompiledConfig(next)
+      setValidationErrors(null)
+      // Keep yaml store in sync so switching to YAML view is consistent
+      try {
+        const yamlContent = yaml.stringify(next)
+        setYaml(yamlContent)
+      } catch {
+        // best-effort
+      }
+    },
+    [setCompiledConfig, setValidationErrors, setYaml],
+  )
+
+  // ---------------------------------------------------------------------------
+  // Save flow: POST (new) or PATCH (existing)
+  // ---------------------------------------------------------------------------
+
+  const handleSave = useCallback(async () => {
+    if (!compiledConfig) return
+    setIsSaving(true)
+    setValidationErrors(null)
+    setYamlError(null)
     try {
-      await compileAgent(prompt, (token) => {
-        useAgentStore.setState((s) => ({ yaml: s.yaml + token }))
-      })
-    } catch (e) {
-      console.error("Compile error", e)
+      const configPayload = compiledConfig as Record<string, unknown>
+      if (agentId) {
+        await patchAgent(agentId, configPayload)
+      } else {
+        const created = await createAgentFromConfig(configPayload)
+        setAgentId(created.id)
+      }
+    } catch (e: unknown) {
+      const apiErr = e as { status?: number; detail?: unknown }
+      if (apiErr?.status === 422) {
+        const detail = apiErr.detail as {
+          message?: string
+          delta?: ValidationDelta
+        } | null
+        if (detail?.delta) {
+          setValidationErrors(detail.delta)
+        }
+        const msg = detail?.message ?? "Validation failed"
+        setYamlError(msg)
+      } else {
+        console.error("Save error", e)
+      }
     } finally {
-      setIsCompiling(false)
+      setIsSaving(false)
     }
-  }, [setIsCompiling, setYaml])
+  }, [compiledConfig, agentId, setAgentId, setValidationErrors])
 
-  const handleTemplateSelect = useCallback((yaml: string, name: string) => {
-    useAgentStore.setState({ yaml, agentName: name })
-  }, [])
+  // ---------------------------------------------------------------------------
+  // Legacy create agent handler (from YamlEditor bottom bar)
+  // ---------------------------------------------------------------------------
 
-  const handleCreateAgent = useCallback(async (name: string, yamlStr: string) => {
-    try {
-      const agent = await createAgent(name, yamlStr)
-      setAgentId(agent.id)
-    } catch (e) {
-      console.error("Create agent error", e)
-    }
-  }, [setAgentId])
+  const handleCreateAgent = useCallback(
+    async (name: string, yamlContent: string) => {
+      try {
+        let config: Record<string, unknown>
+        try {
+          config = yaml.parse(yamlContent) as Record<string, unknown>
+        } catch {
+          config = { name, yaml_config: yamlContent }
+        }
+        const created = await createAgentFromConfig(config)
+        setAgentId(created.id)
+      } catch (e) {
+        console.error("Create agent error", e)
+      }
+    },
+    [setAgentId],
+  )
 
   const handleStartSession = useCallback(async () => {
     if (!agentId) return
     clearStreamEvents()
     setSessionStatus("running")
     try {
+      const { createSession } = await import("@/lib/api")
       const session = await createSession(agentId)
       setSessionId(session.id)
       setCurrentStep(3)
@@ -58,21 +201,32 @@ export default function QuickstartPage() {
           const event = data as Parameters<typeof addStreamEvent>[0]
           addStreamEvent(event)
           if (event.type === "status") {
-            if (event.status === "completed" || event.status === "failed") {
+            if (
+              event.status === "completed" ||
+              event.status === "failed"
+            ) {
               setSessionStatus(event.status)
               disconnect()
             }
           }
         },
-        () => setSessionStatus("completed")
+        () => setSessionStatus("completed"),
       )
     } catch (e) {
       console.error("Session error", e)
       setSessionStatus("failed")
     }
-  }, [agentId, clearStreamEvents, setSessionStatus, setSessionId, setCurrentStep, addStreamEvent])
+  }, [
+    agentId,
+    clearStreamEvents,
+    setSessionStatus,
+    setSessionId,
+    setCurrentStep,
+    addStreamEvent,
+  ])
 
   const showStream = sessionId !== null
+  const hasContent = yamlStr.trim().length > 0
 
   return (
     <div className="flex h-full">
@@ -82,11 +236,102 @@ export default function QuickstartPage() {
       <div className="flex-1 flex flex-col min-w-0">
         {showStream ? (
           <StreamViewer />
-        ) : yaml ? (
-          <YamlEditor onCreateAgent={handleCreateAgent} />
+        ) : hasContent ? (
+          <>
+            {/* View mode toggle header */}
+            <div className="flex items-center gap-2 px-4 py-2 border-b border-white/[0.06] shrink-0">
+              <span className="text-[10px] text-neutral-500">Editor:</span>
+              <div className="flex bg-white/[0.04] rounded p-0.5 gap-0.5">
+                <button
+                  onClick={() => {
+                    // When switching back to form, re-parse current YAML store value
+                    if (viewMode === "yaml" && yamlStr) {
+                      try {
+                        const parsed = yaml.parse(yamlStr) as AgentConfig
+                        setCompiledConfig(parsed)
+                        setYamlError(null)
+                      } catch (parseErr) {
+                        setYamlError(
+                          parseErr instanceof Error
+                            ? parseErr.message
+                            : "YAML parse error",
+                        )
+                        // Stay in yaml view if the YAML is invalid
+                        return
+                      }
+                    }
+                    setViewMode("form")
+                  }}
+                  className={cn(
+                    toggleBtn,
+                    viewMode === "form" ? toggleActive : toggleInactive,
+                  )}
+                >
+                  Form
+                </button>
+                <button
+                  onClick={() => setViewMode("yaml")}
+                  className={cn(
+                    toggleBtn,
+                    viewMode === "yaml" ? toggleActive : toggleInactive,
+                  )}
+                >
+                  Advanced (YAML)
+                </button>
+              </div>
+              {/* Save button */}
+              {compiledConfig && !agentId && (
+                <button
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  className={cn(
+                    "ml-auto text-[10px] font-semibold px-3 py-1 rounded transition-colors",
+                    isSaving
+                      ? "bg-white/[0.06] text-neutral-500 cursor-not-allowed"
+                      : "bg-indigo-600 hover:bg-indigo-500 text-white",
+                  )}
+                >
+                  {isSaving ? "Saving…" : "Save agent"}
+                </button>
+              )}
+              {compiledConfig && agentId && (
+                <button
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  className={cn(
+                    "ml-auto text-[10px] font-semibold px-3 py-1 rounded transition-colors",
+                    isSaving
+                      ? "bg-white/[0.06] text-neutral-500 cursor-not-allowed"
+                      : "bg-white/[0.06] hover:bg-white/[0.1] text-neutral-300 border border-white/[0.08]",
+                  )}
+                >
+                  {isSaving ? "Saving…" : "Save changes"}
+                </button>
+              )}
+            </div>
+
+            {/* Editor pane */}
+            <div className="flex-1 overflow-hidden">
+              {viewMode === "form" && compiledConfig ? (
+                <AgentFormView
+                  config={compiledConfig}
+                  tools={tools}
+                  onChange={handleFormChange}
+                  errors={validationErrors}
+                />
+              ) : (
+                <YamlEditor
+                  onCreateAgent={handleCreateAgent}
+                  yamlError={yamlError}
+                />
+              )}
+            </div>
+          </>
         ) : (
           <TemplateBrowser onSelect={handleTemplateSelect} />
         )}
+
+        {/* Start session row */}
         {agentId && !sessionId && (
           <div className="border-t border-white/[0.06] px-4 py-2.5 flex justify-end shrink-0">
             <button

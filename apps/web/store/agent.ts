@@ -3,6 +3,29 @@ import { create } from "zustand"
 import { API_BASE_URL } from "@/lib/api"
 
 // ---------------------------------------------------------------------------
+// AgentConfig — typed shape for form view + PATCH payload (Phase 5B)
+// ---------------------------------------------------------------------------
+
+export interface AgentConfig {
+  name: string
+  model: string
+  description?: string
+  instruction: string
+  tools?: string[]
+  [key: string]: unknown // tolerate extra ADK fields
+}
+
+// ---------------------------------------------------------------------------
+// ValidationDelta — shape returned by backend 422 detail.delta (Phase 5B)
+// ---------------------------------------------------------------------------
+
+export interface ValidationDelta {
+  unknown_tools: string[]
+  invalid_model: string | null
+  missing_required: string[]
+}
+
+// ---------------------------------------------------------------------------
 // Tool catalog types (Phase 5A)
 // ---------------------------------------------------------------------------
 
@@ -81,6 +104,9 @@ export interface AgentStore {
   toolsLoaded: boolean
   /** Internal guard — do not use outside this store */
   _toolsLoading: boolean
+  // Phase 5B: parsed config derived from compiled YAML
+  compiledConfig: AgentConfig | null
+  validationErrors: ValidationDelta | null
   loadTools: () => Promise<void>
   setPrompt: (p: string) => void
   setYaml: (y: string) => void
@@ -93,6 +119,8 @@ export interface AgentStore {
   clearStreamEvents: () => void
   setSessionStatus: (s: "idle" | "running" | "completed" | "failed") => void
   setCurrentStep: (s: 1 | 2 | 3 | 4) => void
+  setCompiledConfig: (c: AgentConfig | null) => void
+  setValidationErrors: (e: ValidationDelta | null) => void
   reset: () => void
 }
 
@@ -110,6 +138,8 @@ const initialState = {
   tools: [] as ToolDescriptor[],
   toolsLoaded: false,
   _toolsLoading: false,
+  compiledConfig: null as AgentConfig | null,
+  validationErrors: null as ValidationDelta | null,
 }
 
 export const useAgentStore = create<AgentStore>((set, get) => ({
@@ -140,5 +170,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   clearStreamEvents: () => set({ streamEvents: [] }),
   setSessionStatus: (sessionStatus) => set({ sessionStatus }),
   setCurrentStep: (currentStep) => set({ currentStep }),
+  setCompiledConfig: (compiledConfig) => set({ compiledConfig }),
+  setValidationErrors: (validationErrors) => set({ validationErrors }),
   reset: () => set(initialState),
 }))

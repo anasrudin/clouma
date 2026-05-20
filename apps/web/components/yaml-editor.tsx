@@ -8,8 +8,13 @@ const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false 
 
 export function YamlEditor({
   onCreateAgent,
+  yamlError,
 }: {
   onCreateAgent: (name: string, yamlStr: string) => void
+  /** Error message to display below the editor (parse or validation error).
+   *  MVP: plain message below editor — Monaco line markers are deferred
+   *  because extracting line numbers from yaml parse errors is fiddly. */
+  yamlError?: string | null
 }) {
   const { yaml: yamlStr, setYaml, activeTab, setActiveTab, agentId, agentName, setAgentName } =
     useAgentStore()
@@ -89,6 +94,11 @@ export function YamlEditor({
           <p className="text-[10px] text-emerald-500">
             ✓ Agent created — proceed to Configure environment
           </p>
+        </div>
+      )}
+      {yamlError && (
+        <div className="text-red-400 text-xs px-3 py-2 border-t border-red-400/30 bg-red-500/5 shrink-0">
+          {yamlError}
         </div>
       )}
     </div>

@@ -40,6 +40,46 @@ export async function createAgent(name: string, yaml_config: string) {
   return res.json()
 }
 
+/**
+ * POST /v1/agents — create new agent from a config dict (Phase 5B).
+ * Returns the created agent or throws with detail on 422.
+ */
+export async function createAgentFromConfig(config: Record<string, unknown>) {
+  const res = await fetch(`${API}/v1/agents`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ config }),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    const err = new Error("Failed to create agent") as Error & { status: number; detail: unknown }
+    err.status = res.status
+    err.detail = body.detail
+    throw err
+  }
+  return res.json()
+}
+
+/**
+ * PATCH /v1/agents/{id} — replace config for an existing agent (Phase 5B).
+ * Returns the updated agent or throws with detail on 422.
+ */
+export async function patchAgent(agentId: string, config: Record<string, unknown>) {
+  const res = await fetch(`${API}/v1/agents/${agentId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ config }),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    const err = new Error("Failed to patch agent") as Error & { status: number; detail: unknown }
+    err.status = res.status
+    err.detail = body.detail
+    throw err
+  }
+  return res.json()
+}
+
 export async function listAgents() {
   const res = await fetch(`${API}/v1/agents`)
   if (!res.ok) throw new Error("Failed to list agents")

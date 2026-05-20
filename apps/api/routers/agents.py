@@ -1,8 +1,10 @@
 # apps/api/routers/agents.py
 import uuid
+from typing import Any
 
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -94,3 +96,57 @@ async def get_agent(
         return PlainTextResponse(content=yaml_text, media_type="application/yaml")
 
     return AgentOut.model_validate(agent)
+
+
+# ---------------------------------------------------------------------------
+# PATCH /agents/{agent_id} — partial config update (Phase 5B)
+# ---------------------------------------------------------------------------
+
+
+class AgentPatch(BaseModel):
+    """Partial config update — accept full config dict, validate, replace."""
+
+    config: dict[str, Any]
+
+
+@router.patch("/{agent_id}", response_model=AgentOut)
+async def patch_agent(
+    agent_id: str,
+    payload: AgentPatch,
+    db: AsyncSession = Depends(get_db),
+):
+    """Replace the stored config for an existing agent after validation."""
+    try:
+        validate_agent_config(payload.config)
+    except CompileValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": str(exc),
+                "delta": {
+                    "unknown_tools": exc.delta.unknown_tools,
+                    "invalid_model": exc.delta.invalid_model,
+                    "missing_required": exc.delta.missing_required,
+                },
+            },
+        )
+
+    result = await db.execute(select(Agent).where(Agent.id == agent_id))
+    agent = result.scalar_one_or_none()
+    if agent is None:
+        raise HTTPException(status_code=404, detail=f"agent {agent_id} not found")
+
+    agent.config_json = payload.config
+    agent.name = payload.config.get("name", agent.name)
+    agent.description = payload.config.get("description")
+    agent.yaml_cache = _render_yaml(payload.config)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail=f"agent name '{agent.name}' already exists",
+        )
+    await db.refresh(agent)
+    return agent

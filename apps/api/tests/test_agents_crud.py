@@ -200,6 +200,76 @@ def test_create_duplicate_name_returns_409(api_client):
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# 10. test_patch_agent_updates_config
+# ---------------------------------------------------------------------------
+
+
+def test_patch_agent_updates_config(api_client):
+    """PATCH /v1/agents/{id} with a modified instruction persists the change."""
+    config = {
+        "name": "patch-test-agent",
+        "model": "gemini-flash-latest",
+        "instruction": "Original instruction.",
+    }
+    create_resp = api_client.post("/v1/agents", json={"config": config})
+    assert create_resp.status_code == 201, create_resp.text
+    agent_id = create_resp.json()["id"]
+
+    updated_config = {
+        "name": "patch-test-agent",
+        "model": "gemini-flash-latest",
+        "instruction": "Updated instruction after patch.",
+    }
+    patch_resp = api_client.patch(f"/v1/agents/{agent_id}", json={"config": updated_config})
+    assert patch_resp.status_code == 200, patch_resp.text
+    patch_body = patch_resp.json()
+    assert patch_body["config_json"]["instruction"] == "Updated instruction after patch.", (
+        f"Instruction not updated: {patch_body['config_json']!r}"
+    )
+
+    get_resp = api_client.get(f"/v1/agents/{agent_id}")
+    assert get_resp.status_code == 200, get_resp.text
+    assert get_resp.json()["config_json"]["instruction"] == "Updated instruction after patch."
+
+
+# ---------------------------------------------------------------------------
+# 11. test_patch_agent_rejects_invalid_tool
+# ---------------------------------------------------------------------------
+
+
+def test_patch_agent_rejects_invalid_tool(api_client):
+    """PATCH /v1/agents/{id} with an unknown tool returns 422 with delta.unknown_tools."""
+    config = {
+        "name": "patch-invalid-tool-agent",
+        "model": "gemini-flash-latest",
+        "instruction": "Will be patched with bad tool.",
+    }
+    create_resp = api_client.post("/v1/agents", json={"config": config})
+    assert create_resp.status_code == 201, create_resp.text
+    agent_id = create_resp.json()["id"]
+
+    bad_config = {
+        "name": "patch-invalid-tool-agent",
+        "model": "gemini-flash-latest",
+        "instruction": "Will be patched with bad tool.",
+        "tools": ["totally_bogus_tool"],
+    }
+    patch_resp = api_client.patch(f"/v1/agents/{agent_id}", json={"config": bad_config})
+    assert patch_resp.status_code == 422, patch_resp.text
+    body = patch_resp.json()
+    detail = body.get("detail", {})
+    assert "delta" in detail, f"Expected 'delta' in detail, got: {detail}"
+    assert "totally_bogus_tool" in detail["delta"]["unknown_tools"], (
+        f"Expected 'totally_bogus_tool' in unknown_tools, got: {detail['delta']['unknown_tools']!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 9. test_create_agent_propagates_unexpected_errors
+# ---------------------------------------------------------------------------
+
+
 def test_create_agent_propagates_unexpected_errors():
     """A non-IntegrityError from db.commit() should propagate as 500, not 409.
 

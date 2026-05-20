@@ -1,7 +1,7 @@
 # apps/api/models/agent.py
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, JSON, String, Text
+from sqlalchemy import DateTime, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
 
@@ -19,6 +19,7 @@ class Agent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # onupdate fires only on ORM updates; raw SQL updates bypass this (acceptable for MVP).
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

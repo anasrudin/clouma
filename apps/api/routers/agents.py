@@ -4,6 +4,7 @@ import uuid
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
@@ -53,7 +54,7 @@ async def create_agent(payload: AgentCreate, db: AsyncSession = Depends(get_db))
     db.add(agent)
     try:
         await db.commit()
-    except Exception:
+    except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail=f"agent name '{name}' already exists")
     await db.refresh(agent)
@@ -66,7 +67,16 @@ async def list_agents(db: AsyncSession = Depends(get_db)):
     return result.scalars().all()
 
 
-@router.get("/{agent_id}")
+@router.get(
+    "/{agent_id}",
+    response_model=AgentOut,
+    responses={
+        200: {
+            "content": {"application/yaml": {}, "application/json": {}},
+        },
+        404: {"description": "Agent not found"},
+    },
+)
 async def get_agent(
     agent_id: str,
     format: str = Query("json", pattern="^(json|yaml)$"),

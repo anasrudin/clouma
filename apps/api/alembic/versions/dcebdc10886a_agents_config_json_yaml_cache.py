@@ -41,7 +41,6 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
-        sa.UniqueConstraint("name", name="uq_agents_name"),
     )
     op.create_index("ix_agents_name", "agents", ["name"], unique=True)
 

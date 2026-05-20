@@ -11,7 +11,10 @@ Run with:
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
+from fastapi.testclient import TestClient
 
 # ---------------------------------------------------------------------------
 # Shared valid config for reuse across tests
@@ -23,16 +26,6 @@ VALID_CONFIG = {
     "instruction": "You are a helpful assistant.",
     "tools": ["web_search"],
 }
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _unique_name(base: str, suffix: str) -> str:
-    """Return a unique agent name to avoid 409 conflicts between tests."""
-    return f"{base}-{suffix}"
 
 
 # ---------------------------------------------------------------------------
@@ -199,4 +192,35 @@ def test_create_duplicate_name_returns_409(api_client):
     second = api_client.post("/v1/agents", json={"config": config})
     assert second.status_code == 409, (
         f"Expected 409 on duplicate name, got {second.status_code}: {second.text}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 9. test_create_agent_propagates_unexpected_errors
+# ---------------------------------------------------------------------------
+
+
+def test_create_agent_propagates_unexpected_errors():
+    """A non-IntegrityError from db.commit() should propagate as 500, not 409.
+
+    Uses raise_server_exceptions=False so the 500 is returned as an HTTP response
+    rather than re-raised into the test process.
+    """
+    import api.main as _api_main
+
+    config = {
+        "name": "runtime-error-agent",
+        "model": "gemini-flash-latest",
+        "instruction": "This commit will fail unexpectedly.",
+    }
+
+    async def _raise_runtime_error(self):
+        raise RuntimeError("Simulated connection failure")
+
+    with TestClient(_api_main.app, raise_server_exceptions=False) as client:
+        with patch("sqlalchemy.ext.asyncio.AsyncSession.commit", new=_raise_runtime_error):
+            response = client.post("/v1/agents", json={"config": config})
+
+    assert response.status_code == 500, (
+        f"Expected 500 for unexpected RuntimeError, got {response.status_code}: {response.text}"
     )

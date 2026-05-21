@@ -304,11 +304,14 @@ def write_file(path: str, content: str, mode: str = "w") -> str:
         content: Text content to write (UTF-8).
         mode: 'w' to overwrite (default), 'a' to append.
     Returns:
-        The path that was written.
+        The path that was written, or '[error] ...' on failure.
     """
-    with open(path, mode, encoding="utf-8") as f:
-        f.write(content)
-    return path
+    try:
+        with open(path, mode, encoding="utf-8") as f:
+            f.write(content)
+        return path
+    except Exception as exc:
+        return f"[error] {exc}"
 
 
 # ---------------------------------------------------------------------------
@@ -326,18 +329,22 @@ def rss_fetch(url: str, max_items: int = 10) -> list[dict]:
         max_items: Maximum entries to return (default 10).
     Returns:
         List of dicts with keys: title, url, summary, published.
+        Returns a single-item list with an error dict on failure.
     """
-    import feedparser
-    feed = feedparser.parse(url)
-    return [
-        {
-            "title": e.get("title", ""),
-            "url": e.get("link", ""),
-            "summary": e.get("summary", ""),
-            "published": e.get("published", ""),
-        }
-        for e in feed.entries[:max_items]
-    ]
+    try:
+        import feedparser
+        feed = feedparser.parse(url)
+        return [
+            {
+                "title": e.get("title", ""),
+                "url": e.get("link", ""),
+                "summary": e.get("summary", ""),
+                "published": e.get("published", ""),
+            }
+            for e in feed.entries[:max_items]
+        ]
+    except Exception as exc:
+        return [{"title": f"[error] {exc}", "url": "", "summary": "", "published": ""}]
 
 
 # ---------------------------------------------------------------------------

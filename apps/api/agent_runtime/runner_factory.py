@@ -21,10 +21,29 @@ from google.adk.runners import Runner
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
+from google.adk.tools import AgentTool
+
 from agent_runtime.session_service import PostgresSessionService
+from agent_runtime.skills import SKILL_REGISTRY, SkillEntry
 from agent_runtime.tools import TOOL_REGISTRY
 from agent_runtime.validator import validate_agent_config
 from api.models.agent import Agent
+
+
+def _build_skill_agent_tool(skill: SkillEntry, model: str) -> AgentTool:
+    """Wrap a SkillEntry as an ADK AgentTool for use by a parent agent."""
+    skill_tools = [
+        TOOL_REGISTRY[t].adk_tool
+        for t in skill.tool_names
+        if t in TOOL_REGISTRY and TOOL_REGISTRY[t].adk_tool is not None
+    ]
+    adk_agent = LlmAgent(
+        name=skill.name,
+        model=model,
+        instruction=skill.instruction,
+        tools=skill_tools,
+    )
+    return AgentTool(agent=adk_agent)
 
 
 async def build_runner(
@@ -78,7 +97,14 @@ async def build_runner(
         if name in TOOL_REGISTRY and TOOL_REGISTRY[name].adk_tool is not None
     ]
 
-    # 4. Build LlmAgent
+    # 4. Resolve skills from registry
+    selected_skills = [
+        _build_skill_agent_tool(SKILL_REGISTRY[name], cfg.get("model", ""))
+        for name in cfg.get("skills", [])
+        if name in SKILL_REGISTRY
+    ]
+
+    # 5. Build LlmAgent
     #    ADK requires agent name to be a valid Python identifier.
     #    Sanitize by replacing non-alphanumeric characters with underscores.
     raw_name: str = cfg["name"]
@@ -92,13 +118,13 @@ async def build_runner(
         model=cfg.get("model", ""),
         instruction=cfg.get("instruction", ""),
         description=cfg.get("description", ""),
-        tools=selected_tools,
+        tools=selected_tools + selected_skills,
     )
 
-    # 5. Create Postgres-backed session service
+    # 6. Create Postgres-backed session service
     session_service = PostgresSessionService(db_sessionmaker)
 
-    # 6. Wrap in Runner
+    # 7. Wrap in Runner
     runner = Runner(
         agent=adk_agent,
         app_name=resolved_app_name,

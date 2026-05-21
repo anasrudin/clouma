@@ -43,16 +43,40 @@ def _sanitize_md_cell(s: str) -> str:
     return s.replace("|", "\\|").replace("\n", " ").replace("\r", "")
 
 
+# Tools that require agent credentials. Key = tool name, value = "service:key_name" pairs.
+TOOL_CREDENTIALS: dict[str, str] = {
+    "telegram_send": "telegram:bot_token",
+    "slack_send": "slack:webhook_url",
+    "confluence_search": "confluence:api_key,confluence:base_url",
+    "confluence_create_page": "confluence:api_key,confluence:base_url",
+}
+
+
 def _build_tool_catalog_markdown() -> str:
-    """Render the registered tools as a markdown table for the LLM system prompt."""
+    """Render registered tools as a markdown table for the LLM system prompt."""
     if not TOOL_REGISTRY:
         return "(no tools registered)"
-    lines = ["| name | description | params |", "|---|---|---|"]
+    lines = ["| name | description | params | requires |", "|---|---|---|---|"]
     for entry in TOOL_REGISTRY.values():
         name = _sanitize_md_cell(entry.name)
         desc = _sanitize_md_cell(entry.description)
         params = ", ".join(entry.input_schema.get("properties", {}).keys()) or "(none)"
-        lines.append(f"| `{name}` | {desc} | {params} |")
+        requires = TOOL_CREDENTIALS.get(entry.name, "-")
+        lines.append(f"| `{name}` | {desc} | {params} | {requires} |")
+    return "\n".join(lines)
+
+
+def _build_skill_catalog_markdown() -> str:
+    """Render registered skills as a markdown table for the LLM system prompt."""
+    from agent_runtime.skills import SKILL_REGISTRY
+    if not SKILL_REGISTRY:
+        return "(no skills registered)"
+    lines = ["| name | description | tools used |", "|---|---|---|"]
+    for entry in SKILL_REGISTRY.values():
+        name = _sanitize_md_cell(entry.name)
+        desc = _sanitize_md_cell(entry.description)
+        tools = ", ".join(f"`{t}`" for t in entry.tool_names)
+        lines.append(f"| `{name}` | {desc} | {tools} |")
     return "\n".join(lines)
 
 
@@ -66,11 +90,21 @@ Available tools (you MUST only reference these names in `tools`):
 
 {catalog}
 
+Available skills — sub-agents you can delegate entire tasks to (reference by name in `skills`):
+
+{skill_catalog}
+
+If a tool has a non-dash value in `requires`, the agent needs those credentials. Include a
+`permissions` block listing required services:
+  permissions:
+    - service: telegram
+      keys: [bot_token]
+
 Output requirements:
 - Return ONLY a single JSON object (no markdown, no prose).
-- Required fields: `name` (lowercase slug, underscores allowed), `model` (use the one configured below), `instruction` (system prompt for the agent).
-- Optional: `description`, `tools` (array of names from the catalog above).
-- Do NOT invent tool names. Pick a subset of the catalog or use an empty array.
+- Required fields: `name` (lowercase slug, underscores only), `model`, `instruction`.
+- Optional: `description`, `tools` (names from tool catalog), `skills` (names from skill catalog), `permissions`.
+- Do NOT invent tool or skill names. Pick subsets from the catalogs above or use empty arrays.
 - Model to use: `{model}`
 """
 
@@ -120,6 +154,7 @@ async def compile_prompt(user_prompt: str) -> CompileResult:
     client = _get_client()
     system = SYSTEM_PROMPT_TEMPLATE.format(
         catalog=_build_tool_catalog_markdown(),
+        skill_catalog=_build_skill_catalog_markdown(),
         model=settings.llm_model,
     )
     resp = await client.chat.completions.create(

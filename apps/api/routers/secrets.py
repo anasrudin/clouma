@@ -7,6 +7,7 @@ from ..database import get_db
 from ..models.agent import Agent
 from ..models.agent_secret import AgentSecret
 from ..schemas.secret import SecretCreate, SecretOut
+from agent_runtime.crypto import encrypt_value
 
 router = APIRouter()
 
@@ -36,16 +37,19 @@ async def upsert_secret(agent_id: str, payload: SecretCreate, db: AsyncSession =
             AgentSecret.key_name == payload.key_name,
         )
     )
+    from api.config import settings
+    stored_value = encrypt_value(payload.value, settings.secret_encryption_key)
+
     secret = result.scalar_one_or_none()
     if secret:
-        secret.value = payload.value
+        secret.value = stored_value
     else:
         secret = AgentSecret(
             id=str(uuid.uuid4()),
             agent_id=agent_id,
             service=payload.service,
             key_name=payload.key_name,
-            value=payload.value,
+            value=stored_value,
         )
         db.add(secret)
     await db.commit()

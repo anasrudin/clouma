@@ -23,4 +23,8 @@ async def get_agent_secret(
         )
     )
     secret = result.scalar_one_or_none()
-    return secret.value if secret else None
+    if secret is None:
+        return None
+    from api.config import settings
+    from agent_runtime.crypto import decrypt_value
+    return decrypt_value(secret.value, settings.secret_encryption_key)

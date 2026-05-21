@@ -64,6 +64,22 @@ async def list_sessions(db: AsyncSession = Depends(get_db)):
     return result.scalars().all()
 
 
+@router.post("/sessions/{session_id}/terminate", status_code=200)
+async def terminate_session(session_id: str, db: AsyncSession = Depends(get_db)):
+    """Signal a running session to stop after its current event.
+
+    Sets status to 'terminated' in the DB. The WebSocket handler checks this
+    flag cooperatively — it will stop streaming after the next event completes.
+    """
+    result = await db.execute(select(Session).where(Session.id == session_id))
+    session = result.scalar_one_or_none()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    session.status = "terminated"
+    await db.commit()
+    return {"status": "terminated", "session_id": session_id}
+
+
 # ---------------------------------------------------------------------------
 # WebSocket endpoint: ADK Runner stream
 # ---------------------------------------------------------------------------
@@ -156,6 +172,14 @@ async def session_ws(websocket: WebSocket, session_id: str):
                 parts=[genai_types.Part(text=user_text)],
             )
 
+            # Check for cancellation before starting this turn.
+            async with AsyncSessionLocal() as check_db:
+                row = await check_db.execute(select(Session).where(Session.id == session_id))
+                sess_row = row.scalar_one_or_none()
+                if sess_row and sess_row.status == "terminated":
+                    await websocket.send_json({"type": "stream_error", "error": "Session terminated."})
+                    return
+
             # Forward every yielded ADK Event to the client as JSON.
             # DO NOT manually append events to session — the ADK Runner and
             # BaseSessionService.append_event() handle that internally.
@@ -165,6 +189,13 @@ async def session_ws(websocket: WebSocket, session_id: str):
                 new_message=new_message,
             ):
                 await websocket.send_json(event.model_dump(mode="json"))
+                # Cooperative cancellation: check after each event.
+                async with AsyncSessionLocal() as check_db:
+                    row = await check_db.execute(select(Session).where(Session.id == session_id))
+                    sess_row = row.scalar_one_or_none()
+                    if sess_row and sess_row.status == "terminated":
+                        await websocket.send_json({"type": "stream_error", "error": "Session terminated."})
+                        return
 
     except WebSocketDisconnect:
         return

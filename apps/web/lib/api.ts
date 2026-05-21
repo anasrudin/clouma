@@ -199,3 +199,46 @@ export async function dryRunAgent(config: Record<string, unknown>): Promise<DryR
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Agent Secrets / Integrations
+// ---------------------------------------------------------------------------
+
+export interface SecretDescriptor {
+  id: string
+  service: string
+  key_name: string
+  created_at: string
+}
+
+export async function listAgentSecrets(agentId: string): Promise<SecretDescriptor[]> {
+  const res = await fetch(`${API}/v1/agents/${agentId}/secrets`)
+  if (!res.ok) throw new Error("Failed to list agent secrets")
+  return res.json()
+}
+
+export async function upsertAgentSecret(
+  agentId: string,
+  service: string,
+  keyName: string,
+  value: string,
+): Promise<SecretDescriptor> {
+  const res = await fetch(`${API}/v1/agents/${agentId}/secrets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ service, key_name: keyName, value }),
+  })
+  if (!res.ok) throw new Error("Failed to save secret")
+  return res.json()
+}
+
+export async function deleteAgentSecret(
+  agentId: string,
+  service: string,
+  keyName: string,
+): Promise<void> {
+  const res = await fetch(`${API}/v1/agents/${agentId}/secrets/${service}/${keyName}`, {
+    method: "DELETE",
+  })
+  if (!res.ok && res.status !== 204) throw new Error("Failed to delete secret")
+}

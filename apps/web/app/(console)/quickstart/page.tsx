@@ -1,9 +1,9 @@
 "use client"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import yaml from "yaml"
 import { useAgentStore } from "@/store/agent"
 import { compileAgent, createAgentFromConfig, patchAgent, type DryRunResult } from "@/lib/api"
-import { connectSessionStream } from "@/lib/ws"
+import { connectSessionStream, type SessionConnection } from "@/lib/ws"
 import { QuickstartPanel } from "@/components/quickstart-panel"
 import { TemplateBrowser } from "@/components/template-browser"
 import { YamlEditor } from "@/components/yaml-editor"
@@ -30,6 +30,7 @@ export default function QuickstartPage() {
     agentId,
     sessionId,
     tools,
+    skills,
     compiledConfig,
     validationErrors,
     setYaml,
@@ -43,6 +44,7 @@ export default function QuickstartPage() {
     setCompiledConfig,
     setValidationErrors,
     loadTools,
+    loadSkills,
   } = useAgentStore()
 
   // "form" is the default view after compile; "yaml" shows Monaco
@@ -53,15 +55,17 @@ export default function QuickstartPage() {
   // Phase 6: dry-run result + "save anyway" override
   const [dryRunResult, setDryRunResult] = useState<DryRunResult | null>(null)
   const [saveAnyway, setSaveAnyway] = useState(false)
+  const sessionConnRef = useRef<SessionConnection | null>(null)
 
   // After a failed dry-run, Save is disabled unless the user checks "Save anyway".
   // Before any test (dryRunResult === null), Save works normally.
   const dryRunBlocking = dryRunResult !== null && !dryRunResult.ok && !saveAnyway
 
-  // Ensure tool catalog is loaded for the form view
+  // Ensure tool + skill catalogs are loaded for the form view
   useEffect(() => {
     loadTools()
-  }, [loadTools])
+    loadSkills()
+  }, [loadTools, loadSkills])
 
 
   // ---------------------------------------------------------------------------
@@ -214,24 +218,28 @@ export default function QuickstartPage() {
       const session = await createSession(agentId)
       setSessionId(session.id)
       setCurrentStep(3)
-      const disconnect = connectSessionStream(
+      const conn = connectSessionStream(
         session.id,
         { agentId: agentId! },
         (data) => {
           const event = data as Parameters<typeof addStreamEvent>[0]
           addStreamEvent(event)
           if (event.type === "status") {
-            if (
-              event.status === "completed" ||
-              event.status === "failed"
-            ) {
+            if (event.status === "completed" || event.status === "failed") {
               setSessionStatus(event.status)
-              disconnect()
+              conn.disconnect()
+              sessionConnRef.current = null
             }
           }
         },
-        () => setSessionStatus("completed"),
+        () => {
+          setSessionStatus("completed")
+          sessionConnRef.current = null
+        },
       )
+      sessionConnRef.current = conn
+      // Auto-send initial trigger so the agent begins running immediately
+      setTimeout(() => conn.send("Execute your task."), 300)
     } catch (e) {
       console.error("Session error", e)
       setSessionStatus("failed")
@@ -255,7 +263,7 @@ export default function QuickstartPage() {
       </div>
       <div className="flex-1 flex flex-col min-w-0">
         {showStream ? (
-          <StreamViewer />
+          <StreamViewer onSend={(text) => sessionConnRef.current?.send(text)} />
         ) : hasContent ? (
           <>
             {/* View mode toggle header */}
@@ -374,6 +382,7 @@ export default function QuickstartPage() {
                 <AgentFormView
                   config={compiledConfig}
                   tools={tools}
+                  skills={skills}
                   onChange={handleFormChange}
                   errors={validationErrors}
                 />

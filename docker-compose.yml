@@ -11,11 +11,64 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clouma -d clouma"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+
+  migrate:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    command: ["sh", "-c", "cd /workspace/api && alembic upgrade head"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://clouma:clouma@postgres:5432/clouma
+      LLM_BASE_URL: ${LLM_BASE_URL}
+      LLM_MODEL: ${LLM_MODEL}
+      LLM_API_KEY: ${LLM_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://clouma:clouma@postgres:5432/clouma
+      REDIS_URL: redis://redis:6379
+      LLM_PROVIDER: ${LLM_PROVIDER:-nvidia}
+      LLM_BASE_URL: ${LLM_BASE_URL}
+      LLM_MODEL: ${LLM_MODEL}
+      LLM_API_KEY: ${LLM_API_KEY}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      TAVILY_BASE_URL: ${TAVILY_BASE_URL:-https://api.tavily.com}
+      PYTHON_SANDBOX: ${PYTHON_SANDBOX:-subprocess}
+      E2B_API_KEY: ${E2B_API_KEY:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
 
 volumes:
   pgdata:

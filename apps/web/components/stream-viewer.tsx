@@ -1,4 +1,6 @@
 "use client"
+import { useRef, useState } from "react"
+import { ArrowUp } from "lucide-react"
 /**
  * StreamViewer — renders events from the agent execution stream.
  *
@@ -179,13 +181,26 @@ function EventRow({ event }: { event: StreamEvent }) {
 // StreamViewer
 // ---------------------------------------------------------------------------
 
-export function StreamViewer() {
+export function StreamViewer({ onSend }: { onSend?: (text: string) => void }) {
   const { streamEvents, sessionStatus } = useAgentStore()
+  const [input, setInput] = useState("")
+  const inputRef = useRef<HTMLInputElement>(null)
+  const bottomRef = useRef<HTMLDivElement>(null)
+
+  const handleSend = () => {
+    const text = input.trim()
+    if (!text || !onSend) return
+    onSend(text)
+    setInput("")
+  }
 
   if (streamEvents.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full text-neutral-600 text-[11px]">
-        Session stream will appear here when you start a session.
+      <div className="flex flex-col h-full">
+        <div className="flex-1 flex items-center justify-center text-neutral-600 text-[11px]">
+          Starting session…
+        </div>
+        {onSend && <ChatInput input={input} setInput={setInput} inputRef={inputRef} onSend={handleSend} />}
       </div>
     )
   }
@@ -212,6 +227,49 @@ export function StreamViewer() {
           const key = e.type === "adk_event" ? (e.raw.id ?? i) : i
           return <EventRow key={key} event={e} />
         })}
+        <div ref={bottomRef} />
+      </div>
+      {onSend && (
+        <ChatInput input={input} setInput={setInput} inputRef={inputRef} onSend={handleSend} />
+      )}
+    </div>
+  )
+}
+
+function ChatInput({
+  input,
+  setInput,
+  inputRef,
+  onSend,
+}: {
+  input: string
+  setInput: (v: string) => void
+  inputRef: React.RefObject<HTMLInputElement>
+  onSend: () => void
+}) {
+  return (
+    <div className="px-3 py-2.5 border-t border-white/[0.06] shrink-0">
+      <div className="flex items-center gap-2 bg-[#1a1a1e] border border-white/[0.08] rounded-lg px-3 py-2">
+        <input
+          ref={inputRef}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend() } }}
+          placeholder="Send a message to the agent..."
+          className="flex-1 bg-transparent text-[11px] text-neutral-200 placeholder:text-neutral-600 outline-none"
+        />
+        <button
+          onClick={onSend}
+          disabled={!input.trim()}
+          className={cn(
+            "w-6 h-6 rounded flex items-center justify-center shrink-0 transition-colors",
+            input.trim()
+              ? "bg-indigo-600 hover:bg-indigo-500 text-white"
+              : "bg-white/[0.06] text-neutral-600 cursor-not-allowed",
+          )}
+        >
+          <ArrowUp size={13} />
+        </button>
       </div>
     </div>
   )

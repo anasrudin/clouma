@@ -19,6 +19,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+import api.models.agent_secret  # noqa: F401 — registers table with Base for create_tables()
 from .routers import agents, sessions, tools, compile as compile_router, dry_run as dry_run_router
 from .routers import skills as skills_router
 app.include_router(agents.router, prefix="/v1")

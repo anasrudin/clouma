@@ -233,9 +233,135 @@ No new frontend packages needed (uses existing shadcn/ui components).
 
 ---
 
+---
+
+## Section E: Predefined Skills as Sub-Agents
+
+### Concept
+
+A **skill** is a pre-built `LlmAgent` (ADK) with its own tools and instruction, wrapped as an `AgentTool`. The parent agent delegates tasks to skills via natural language — e.g. "use web_researcher to research AI startups, then use report_writer to create a PPTX."
+
+This leverages ADK's native multi-agent support (`AgentTool` wraps any agent as a callable tool).
+
+### Predefined skill catalog — `apps/api/agent_runtime/skills/catalog.py`
+
+| Skill name | Tools available | Instruction focus |
+|---|---|---|
+| `web_researcher` | `web_search`, `scrape_url` | Research a topic, return structured findings with sources |
+| `pdf_summarizer` | `pdf_extract` | Extract and summarize PDF content |
+| `report_writer` | `docx_generate`, `pptx_generate` | Generate formatted documents from structured content |
+| `youtube_analyst` | `youtube_transcript` | Summarize YouTube video content |
+| `data_analyst` | `run_python` | Analyse data, compute statistics, generate charts via code |
+| `rss_monitor` | `rss_fetch` | Monitor RSS feeds and return top highlights |
+
+### Registry — `SKILL_REGISTRY`
+
+Mirrors `TOOL_REGISTRY` pattern:
+
+```python
+@dataclass(frozen=True)
+class SkillEntry:
+    name: str
+    description: str
+    adk_agent: LlmAgent   # the pre-built sub-agent
+    adk_tool: AgentTool   # wrapped for use in parent agent
+```
+
+Each skill is registered on import via a `register_skill()` decorator (or direct dict assignment at module load).
+
+### YAML schema extension
+
+```yaml
+name: ai-research-reporter
+model: meta/llama-3.1-70b-instruct
+instruction: Research trending AI startups and produce a weekly PPTX report.
+skills:
+  - web_researcher
+  - report_writer
+tools:
+  - current_time
+```
+
+Skills and tools are separate lists. Skills are elevated sub-agents; tools are direct function calls.
+
+### Runner factory changes — `runner_factory.py`
+
+```python
+selected_skills = [
+    SKILL_REGISTRY[name].adk_tool
+    for name in cfg.get("skills", [])
+    if name in SKILL_REGISTRY
+]
+
+adk_agent = LlmAgent(
+    ...
+    tools=selected_tools + selected_skills,   # AgentTools appended
+)
+```
+
+### Validator changes
+
+Add `unknown_skills: list[str]` to `ValidationDelta`. Skill names in the YAML `skills` list are validated against `SKILL_REGISTRY` — unknown names are a hard error (same as unknown tools).
+
+### Compiler changes
+
+`_build_skill_catalog_markdown()` mirrors the tool catalog builder. The system prompt gains a new section:
+
+```
+Available skills (sub-agents you can delegate to — list them under `skills:`):
+
+| name            | description                                      |
+|-----------------|--------------------------------------------------|
+| web_researcher  | Research a topic via web search and page scraping |
+| report_writer   | Generate DOCX or PPTX from structured content    |
+| ...             |                                                  |
+
+Skills are called by the parent agent using natural language delegation,
+not by name in code. List the skills you need under `skills:` in the config.
+```
+
+### API endpoint
+
+```
+GET /v1/skills    → list[{name, description}]   # mirrors GET /v1/tools
+```
+
+---
+
+## Implementation Order (updated)
+
+1. Content tools + deps (`builtin.py`, `requirements.txt`)
+2. Skills catalog (`agent_runtime/skills/catalog.py`, `SKILL_REGISTRY`)
+3. Runner factory: skills as AgentTool
+4. Compiler: skills section in system prompt
+5. Validator: `unknown_skills` check + `missing_permissions` soft warning
+6. GET /v1/skills endpoint
+7. AgentSecret model + alembic migration
+8. Secrets API router (`routers/secrets.py`)
+9. Credentials runtime module (`agent_runtime/credentials.py`)
+10. Web UI: Integrations panel (`components/agent-integrations.tsx`)
+11. Tests for each layer
+
+---
+
+## Dependencies summary
+
+```
+# requirements.txt additions
+feedparser>=6.0,<7
+youtube-transcript-api>=0.6,<1
+pymupdf>=1.24,<2
+python-docx>=1.1,<2
+```
+
+No new frontend packages needed (uses existing shadcn/ui components).
+
+---
+
 ## Out of scope
 
 - Encryption at rest for credential values (Phase 8+)
 - Per-user credentials (requires auth system)
 - `telegram_send`, `confluence_*`, `slack_send` tool implementations (tracked separately — credential infrastructure is the blocker)
 - Anthropic MCP tool integration
+- Custom user-defined skills (Phase 9+)

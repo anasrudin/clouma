@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 
 from google.adk.tools import AgentTool
 
+from agent_runtime.model_resolver import resolve_model
 from agent_runtime.session_service import PostgresSessionService
 from agent_runtime.skills import SKILL_REGISTRY, SkillEntry
 from agent_runtime.tools import TOOL_REGISTRY
@@ -30,7 +31,7 @@ from agent_runtime.validator import validate_agent_config
 from api.models.agent import Agent
 
 
-def _build_skill_agent_tool(skill: SkillEntry, model: str) -> AgentTool:
+def _build_skill_agent_tool(skill: SkillEntry, model_name: str) -> AgentTool:
     """Wrap a SkillEntry as an ADK AgentTool for use by a parent agent."""
     skill_tools = [
         TOOL_REGISTRY[t].adk_tool
@@ -39,7 +40,7 @@ def _build_skill_agent_tool(skill: SkillEntry, model: str) -> AgentTool:
     ]
     adk_agent = LlmAgent(
         name=skill.name,
-        model=model,
+        model=resolve_model(model_name),
         instruction=skill.instruction,
         tools=skill_tools,
     )
@@ -115,7 +116,7 @@ async def build_runner(
     resolved_app_name = app_name or raw_name
     adk_agent = LlmAgent(
         name=sanitized_name,
-        model=cfg.get("model", ""),
+        model=resolve_model(cfg.get("model", "")),
         instruction=cfg.get("instruction", ""),
         description=cfg.get("description", ""),
         tools=selected_tools + selected_skills,

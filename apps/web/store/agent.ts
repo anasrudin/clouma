@@ -12,6 +12,7 @@ export interface AgentConfig {
   description?: string
   instruction: string
   tools?: string[]
+  skills?: string[]
   [key: string]: unknown // tolerate extra ADK fields
 }
 
@@ -37,6 +38,12 @@ export interface ToolDescriptor {
     properties: Record<string, { type: string; description?: string }>
     required?: string[]
   }
+}
+
+export interface SkillDescriptor {
+  name: string
+  description: string
+  tool_names: string[]
 }
 
 // ---------------------------------------------------------------------------
@@ -104,10 +111,15 @@ export interface AgentStore {
   toolsLoaded: boolean
   /** Internal guard — do not use outside this store */
   _toolsLoading: boolean
+  // Skill catalog
+  skills: SkillDescriptor[]
+  skillsLoaded: boolean
+  _skillsLoading: boolean
   // Phase 5B: parsed config derived from compiled YAML
   compiledConfig: AgentConfig | null
   validationErrors: ValidationDelta | null
   loadTools: () => Promise<void>
+  loadSkills: () => Promise<void>
   setPrompt: (p: string) => void
   setYaml: (y: string) => void
   setAgentName: (n: string) => void
@@ -138,6 +150,9 @@ const initialState = {
   tools: [] as ToolDescriptor[],
   toolsLoaded: false,
   _toolsLoading: false,
+  skills: [] as SkillDescriptor[],
+  skillsLoaded: false,
+  _skillsLoading: false,
   compiledConfig: null as AgentConfig | null,
   validationErrors: null as ValidationDelta | null,
 }
@@ -157,6 +172,21 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       // fail silently — tools are optional UI enhancement
     } finally {
       set({ _toolsLoading: false })
+    }
+  },
+  loadSkills: async () => {
+    const state = get()
+    if (state.skillsLoaded || state._skillsLoading) return
+    set({ _skillsLoading: true })
+    try {
+      const res = await fetch(`${API_BASE_URL}/v1/skills`)
+      if (!res.ok) return
+      const data: SkillDescriptor[] = await res.json()
+      set({ skills: data, skillsLoaded: true })
+    } catch {
+      // fail silently
+    } finally {
+      set({ _skillsLoading: false })
     }
   },
   setPrompt: (prompt) => set({ prompt }),

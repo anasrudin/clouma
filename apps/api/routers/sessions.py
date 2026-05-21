@@ -26,8 +26,6 @@ import uuid
 WS_INPUT_TIMEOUT = 300
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
-from google.adk.events.event import Event
-from google.genai import types as genai_types
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -128,79 +126,69 @@ async def session_ws(websocket: WebSocket, session_id: str):
             )
             return
 
-        user_id: str = init.get("user_id", "default-user")
-        app_name: str = init.get("app_name", "clouma")
+        # ----------------------------------------------------------------
+        # Step 2: load agent config from DB
+        # ----------------------------------------------------------------
+        async with AsyncSessionLocal() as db:
+            row = await db.execute(select(Agent).where(Agent.id == agent_id))
+            agent = row.scalar_one_or_none()
+
+        if agent is None:
+            await websocket.send_json({"type": "stream_error", "error": f"Agent {agent_id!r} not found."})
+            return
+
+        cfg: dict = agent.config_json or {}
+        instruction: str = cfg.get("instruction", "You are a helpful assistant.")
 
         # ----------------------------------------------------------------
-        # Step 2: build runner (raises ValueError for unknown agent_id)
+        # Step 3: conversation loop (in-memory history for multi-turn)
         # ----------------------------------------------------------------
-        from agent_runtime.runner_factory import build_runner
+        from agent_runtime.claw_runner import run_claw_turn
 
-        runner = await build_runner(agent_id, AsyncSessionLocal, app_name)
+        history: list[tuple[str, str]] = []
 
-        # ----------------------------------------------------------------
-        # Step 3: create or fetch ADK session
-        # ----------------------------------------------------------------
-        sess = await runner.session_service.get_session(
-            app_name=app_name,
-            user_id=user_id,
-            session_id=session_id,
-        )
-        if sess is None:
-            sess = await runner.session_service.create_session(
-                app_name=app_name,
-                user_id=user_id,
-                session_id=session_id,
-            )
-
-        # ----------------------------------------------------------------
-        # Step 4: receive user messages and stream responses
-        # ----------------------------------------------------------------
         while True:
             try:
                 msg = await asyncio.wait_for(websocket.receive_json(), timeout=WS_INPUT_TIMEOUT)
             except asyncio.TimeoutError:
-                await websocket.send_json({"type": "stream_error", "error": f"No input received in {WS_INPUT_TIMEOUT}s; closing."})
+                await websocket.send_json({"type": "stream_error", "error": f"No input in {WS_INPUT_TIMEOUT}s; closing."})
                 return
+
             user_text: str = msg.get("input", "")
             if not user_text:
                 continue
 
-            # Build ADK Content for the user turn
-            new_message = genai_types.Content(
-                role="user",
-                parts=[genai_types.Part(text=user_text)],
-            )
-
-            # Check for cancellation before starting this turn.
+            # Cooperative cancellation: check before starting
             async with AsyncSessionLocal() as check_db:
-                row = await check_db.execute(select(Session).where(Session.id == session_id))
-                sess_row = row.scalar_one_or_none()
+                srow = await check_db.execute(select(Session).where(Session.id == session_id))
+                sess_row = srow.scalar_one_or_none()
                 if sess_row and sess_row.status == "terminated":
                     await websocket.send_json({"type": "stream_error", "error": "Session terminated."})
                     return
 
-            # Forward every yielded ADK Event to the client as JSON.
-            # DO NOT manually append events to session — the ADK Runner and
-            # BaseSessionService.append_event() handle that internally.
-            async for event in runner.run_async(
-                user_id=user_id,
-                session_id=sess.id,
-                new_message=new_message,
-            ):
-                await websocket.send_json(event.model_dump(mode="json"))
-                # Cooperative cancellation: check after each event.
+            response_text = ""
+            async for event in run_claw_turn(instruction, user_text, history):
+                raw = event.get("raw", {})
+                # Collect response text for history tracking
+                if event.get("type") == "adk_event" and raw.get("turn_complete"):
+                    response_text = raw.pop("_claw_response", "")
+                await websocket.send_json(event)
+
+                # Cooperative cancellation after each event
                 async with AsyncSessionLocal() as check_db:
-                    row = await check_db.execute(select(Session).where(Session.id == session_id))
-                    sess_row = row.scalar_one_or_none()
+                    srow = await check_db.execute(select(Session).where(Session.id == session_id))
+                    sess_row = srow.scalar_one_or_none()
                     if sess_row and sess_row.status == "terminated":
                         await websocket.send_json({"type": "stream_error", "error": "Session terminated."})
                         return
 
+            # Update conversation history for next turn
+            if response_text:
+                history.append((user_text, response_text))
+
     except WebSocketDisconnect:
         return
     except Exception as exc:
-        # Surface errors to the client before closing
         try:
             await websocket.send_json({"type": "stream_error", "error": str(exc)})
         except Exception:

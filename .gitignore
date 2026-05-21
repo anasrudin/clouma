@@ -25,3 +25,10 @@ apps/api/.env
 
 # Superpowers
 .superpowers/
+
+# Local Claude settings
+.claude/
+
+# Claw orchestrator binaries (downloaded/built locally, not versioned)
+bin/claw
+bin/claw-linux-x64

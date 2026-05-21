@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     # If empty, secrets are stored as plaintext (dev/MVP only).
     secret_encryption_key: str = ""
 
+    # Claw Code orchestrator
+    # ANTHROPIC_API_KEY is read directly by the claw binary; set it in .env
+    # CLAW_BINARY overrides the default path to the compiled claw binary
+    # CLAW_MODEL sets the Claude model used by the claw orchestrator
+
     class Config:
         env_file = ".env"
 

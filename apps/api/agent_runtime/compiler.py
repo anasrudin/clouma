@@ -183,4 +183,8 @@ async def compile_prompt(user_prompt: str) -> CompileResult:
             f"LLM did not return valid JSON. First 200 chars: {snippet!r}. "
             f"Original error: {exc.msg} at position {exc.pos}."
         ) from exc
+    # LLMs occasionally omit `model` despite the system prompt. Since the prompt
+    # already specifies settings.llm_model, we can safely fill it in.
+    if not config.get("model"):
+        config["model"] = settings.llm_model
     return CompileResult(config=config, raw_response=raw)

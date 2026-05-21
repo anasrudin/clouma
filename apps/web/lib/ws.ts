@@ -25,12 +25,17 @@ type MessageHandler = (data: unknown) => void
  * Automatically sends the required init message on open.
  * Returns a cleanup function that closes the socket.
  */
+export interface SessionConnection {
+  disconnect: () => void
+  send: (input: string) => void
+}
+
 export function connectSessionStream(
   sessionId: string,
   init: WsInitOptions,
   onMessage: MessageHandler,
   onClose?: () => void
-): () => void {
+): SessionConnection {
   const ws = new WebSocket(`${WS_BASE}/v1/sessions/${sessionId}/ws`)
 
   ws.onopen = () => {
@@ -49,7 +54,11 @@ export function connectSessionStream(
   }
   ws.onclose = () => onClose?.()
   ws.onerror = () => ws.close()
-  return () => ws.close()
+
+  return {
+    disconnect: () => ws.close(),
+    send: (input: string) => sendInput(ws, input),
+  }
 }
 
 /**

@@ -60,6 +60,14 @@ async def create_agent(payload: AgentCreate, db: AsyncSession = Depends(get_db))
         await db.rollback()
         raise HTTPException(status_code=409, detail=f"agent name '{name}' already exists")
     await db.refresh(agent)
+
+    # Register cron job if agent has a schedule
+    cron = payload.config.get("schedule")
+    if cron:
+        from agent_runtime.scheduler import schedule_agent
+        prompt = payload.config.get("schedule_prompt")
+        schedule_agent(agent.id, cron, name, prompt) if prompt else schedule_agent(agent.id, cron, name)
+
     return agent
 
 
@@ -150,4 +158,32 @@ async def patch_agent(
             detail=f"agent name '{agent.name}' already exists",
         )
     await db.refresh(agent)
+
+    # Reschedule (or remove) cron job based on updated config
+    from agent_runtime.scheduler import schedule_agent, unschedule_agent
+    cron = payload.config.get("schedule")
+    if cron:
+        prompt = payload.config.get("schedule_prompt")
+        schedule_agent(agent.id, cron, agent.name, prompt) if prompt else schedule_agent(agent.id, cron, agent.name)
+    else:
+        unschedule_agent(agent.id)
+
     return agent
+
+
+# ---------------------------------------------------------------------------
+# DELETE /agents/{agent_id}
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/{agent_id}", status_code=204)
+async def delete_agent(agent_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Agent).where(Agent.id == agent_id))
+    agent = result.scalar_one_or_none()
+    if agent is None:
+        raise HTTPException(status_code=404, detail=f"agent {agent_id} not found")
+    await db.delete(agent)
+    await db.commit()
+
+    from agent_runtime.scheduler import unschedule_agent
+    unschedule_agent(agent_id)

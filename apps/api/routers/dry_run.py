@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from agent_runtime.model_resolver import resolve_model
 from agent_runtime.tools import TOOL_REGISTRY
 from agent_runtime.validator import validate_agent_config, CompileValidationError
 from google.adk.agents import LlmAgent
@@ -57,7 +58,7 @@ async def dry_run_agent(req: DryRunRequest) -> DryRunResponse:
 
     adk_agent = LlmAgent(
         name=safe_name,
-        model=cfg["model"],
+        model=resolve_model(cfg["model"]),
         instruction=cfg["instruction"],
         description=cfg.get("description", ""),
         tools=selected_tools,

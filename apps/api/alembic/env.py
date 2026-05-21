@@ -37,6 +37,7 @@ os.environ.setdefault("LLM_API_KEY", "placeholder")
 from api.database import Base  # noqa: E402
 import api.models.agent  # noqa: E402, F401 — registers Agent with Base.metadata
 import api.models.session_event  # noqa: E402, F401 — registers SessionRow + EventRow
+import api.models.agent_secret  # noqa: F401 — registers AgentSecret with Base.metadata
 
 target_metadata = Base.metadata
 

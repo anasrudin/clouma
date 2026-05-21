@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from agent_runtime.tools import TOOL_REGISTRY
+from agent_runtime.skills import SKILL_REGISTRY
+from agent_runtime.compiler import TOOL_CREDENTIALS
 
 
 # Phase 2B allowlist. Finite + auditable — not a wildcard.
@@ -38,6 +40,8 @@ class ValidationDelta:
     unknown_tools: list[str] = field(default_factory=list)
     invalid_model: str | None = None
     missing_required: list[str] = field(default_factory=list)
+    unknown_skills: list[str] = field(default_factory=list)       # hard error
+    missing_permissions: list[str] = field(default_factory=list)  # soft warning
 
 
 class CompileValidationError(Exception):
@@ -82,7 +86,28 @@ def validate_agent_config(cfg: dict[str, Any]) -> None:
             if isinstance(tool_name, str) and tool_name and tool_name not in TOOL_REGISTRY:
                 delta.unknown_tools.append(tool_name)
 
-    if delta.unknown_tools or delta.invalid_model or delta.missing_required:
+    # 4. Skill names — blank/empty strings skipped silently
+    skills = cfg.get("skills", [])
+    if isinstance(skills, list):
+        for skill_name in skills:
+            if isinstance(skill_name, str) and skill_name and skill_name not in SKILL_REGISTRY:
+                delta.unknown_skills.append(skill_name)
+
+    # 5. Soft permission check: tools requiring credentials with no permissions declared
+    declared_services = {
+        p.get("service", "") for p in cfg.get("permissions", [])
+        if isinstance(p, dict)
+    }
+    tools_list = cfg.get("tools", []) if isinstance(cfg.get("tools"), list) else []
+    for tool_name in tools_list:
+        if tool_name in TOOL_CREDENTIALS:
+            required_service = TOOL_CREDENTIALS[tool_name].split(":")[0]
+            if required_service not in declared_services:
+                delta.missing_permissions.append(
+                    f"{tool_name} requires credentials for service '{required_service}'"
+                )
+
+    if delta.unknown_tools or delta.invalid_model or delta.missing_required or delta.unknown_skills:
         parts = []
         if delta.missing_required:
             parts.append(f"missing required: {delta.missing_required}")
@@ -90,6 +115,9 @@ def validate_agent_config(cfg: dict[str, Any]) -> None:
             parts.append(f"invalid model: {delta.invalid_model!r}")
         if delta.unknown_tools:
             parts.append(f"unknown tools: {delta.unknown_tools}")
+        if delta.unknown_skills:
+            parts.append(f"unknown skills: {delta.unknown_skills}")
         raise CompileValidationError(
             "AgentConfig failed validation: " + "; ".join(parts), delta
         )
+    # missing_permissions is a soft warning — does NOT raise
